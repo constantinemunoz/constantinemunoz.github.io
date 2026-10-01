@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type FormEvent as ReactFormEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type FormEvent as ReactFormEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import {
   ArrowDown,
   ArrowLeft,
@@ -151,7 +151,10 @@ type RoomSnapshot = {
   };
   player: { id: string; name: string; role: Role };
 };
-type CursorPoint = { x: number; y: number; active: boolean };
+// x/y: position within the whole suitcase. anchor/ax/ay: the control under the
+// pointer and the position inside it, so DEAF's screen can draw the cursor on
+// the same control even though the two screens lay the suitcase out differently.
+type CursorPoint = { x: number; y: number; active: boolean; anchor?: string; ax?: number; ay?: number };
 type MuteSignal = { symbol: string; updatedAt: number; active: boolean };
 
 const ROLE_ICONS = { operator: Hand, observer: Eye, specialist: BookOpen };
@@ -200,7 +203,7 @@ function withLiveFeed(data: RoomSnapshot, live: LiveFeed, now: number): RoomSnap
       ...data.room,
       game: {
         ...data.room.game,
-        operatorCursor: cursor ? { x: cursor.x, y: cursor.y, active: now > 0 && cursor.active && now - cursor.at < 2_000 } : { x: 0.5, y: 0.5, active: false },
+        operatorCursor: cursor ? { x: cursor.x, y: cursor.y, anchor: cursor.anchor, ax: cursor.ax, ay: cursor.ay, active: now > 0 && cursor.active && now - cursor.at < 2_000 } : { x: 0.5, y: 0.5, active: false },
         muteSignal: signal ? { symbol: signal.symbol, updatedAt: signal.at, active: now > 0 && Boolean(signal.symbol) && now - signal.at < 6_000 } : { symbol: "", updatedAt: 0, active: false },
       },
     },
@@ -389,12 +392,12 @@ function DirectionGlyph({ direction }: { direction: Direction }) {
 function CableModule({ module, vision, act, busy }: { module: CableView; vision: "blind" | "color"; act?: (action: ModuleAction, value?: number | string) => void; busy: boolean }) {
   const count = module.colors?.length ?? module.count;
   return (
-    <section className="case-bay cable-module" data-solved={module.solved} aria-label="Cable module">
+    <section className="case-bay cable-module" data-anchor="cable" data-solved={module.solved} aria-label="Cable module">
       <header><Scissors /><Light color={module.light} hidden={vision === "blind"} /></header>
       <div className="case-wires">
         {Array.from({ length: count }, (_, index) => {
           const color = module.colors?.[index] as LightColor | undefined;
-          return <button key={index} onClick={() => act?.("cut-cable", index)} disabled={!act || busy || module.solved} data-cut={module.cut === index} aria-label={`Cut cable ${index + 1}`}><i style={vision === "color" && color ? { background: WIRE_COLORS[color] } : undefined} /></button>;
+          return <button key={index} data-anchor={`cable-wire-${index}`} onClick={() => act?.("cut-cable", index)} disabled={!act || busy || module.solved} data-cut={module.cut === index} aria-label={`Cut cable ${index + 1}`}><i style={vision === "color" && color ? { background: WIRE_COLORS[color] } : undefined} /></button>;
         })}
       </div>
     </section>
@@ -403,17 +406,17 @@ function CableModule({ module, vision, act, busy }: { module: CableView; vision:
 
 function SliderModule({ module, vision, act, busy }: { module: SliderView; vision: "blind" | "color"; act?: (action: ModuleAction, value?: number | string) => void; busy: boolean }) {
   return (
-    <section className="case-bay slider-module" data-solved={module.solved} aria-label="Color slider module">
+    <section className="case-bay slider-module" data-anchor="slider" data-solved={module.solved} aria-label="Color slider module">
       <div className="slider-bank">
         {module.current.map((up: boolean, index: number) => (
-          <div className="slider-column" key={index}>
+          <div className="slider-column" key={index} data-anchor={`slider-column-${index}`}>
             <Light color={module.lights?.[index]} hidden={vision === "blind"} />
-            <button className={up ? "up" : ""} onClick={() => act?.("toggle-slider", index)} disabled={!act || busy || module.solved} aria-label={`Move slider ${index + 1} ${up ? "down" : "up"}`}><span><i /></span></button>
+            <button className={up ? "up" : ""} data-anchor={`slider-switch-${index}`} onClick={() => act?.("toggle-slider", index)} disabled={!act || busy || module.solved} aria-label={`Move slider ${index + 1} ${up ? "down" : "up"}`}><span><i /></span></button>
             <BrailleCell value={module.braille?.[index] ?? 0} hidden={vision === "color"} compact />
           </div>
         ))}
       </div>
-      <button className="module-enter" onClick={() => act?.("check-slider")} disabled={!act || busy || module.solved}>ENTER</button>
+      <button className="module-enter" data-anchor="slider-enter" onClick={() => act?.("check-slider")} disabled={!act || busy || module.solved}>ENTER</button>
     </section>
   );
 }
@@ -421,11 +424,11 @@ function SliderModule({ module, vision, act, busy }: { module: SliderView; visio
 function DirectionModule({ module, vision, act, busy }: { module: DirectionView; vision: "blind" | "color"; act?: (action: ModuleAction, value?: number | string) => void; busy: boolean }) {
   const buttons: Direction[] = ["UP", "LEFT", "RIGHT", "DOWN"];
   return (
-    <section className="case-bay direction-module" data-solved={module.solved} aria-label="Direction module">
+    <section className="case-bay direction-module" data-anchor="direction" data-solved={module.solved} aria-label="Direction module">
       <Light color={module.light} hidden={vision === "blind"} />
       <div className="direction-pad">
-        {buttons.map((direction) => <button key={direction} data-direction={direction.toLowerCase()} onClick={() => act?.("press-direction", direction)} disabled={!act || busy || module.solved} aria-label={`Press ${direction.toLowerCase()}`}><DirectionGlyph direction={direction} /></button>)}
-        <div className="direction-center"><BrailleCell value={module.braille ?? 0} hidden={vision === "color"} /></div>
+        {buttons.map((direction) => <button key={direction} data-anchor={`direction-${direction.toLowerCase()}`} data-direction={direction.toLowerCase()} onClick={() => act?.("press-direction", direction)} disabled={!act || busy || module.solved} aria-label={`Press ${direction.toLowerCase()}`}><DirectionGlyph direction={direction} /></button>)}
+        <div className="direction-center" data-anchor="direction-center"><BrailleCell value={module.braille ?? 0} hidden={vision === "color"} /></div>
       </div>
     </section>
   );
@@ -437,12 +440,12 @@ function CalculatorModule({ module, vision, act, busy }: { module: CalculatorVie
     ? module.stage === "entry" ? `${module.expression} = ${module.entered || "_"}` : `${module.entered} ✓`
     : module.stage === "entry" ? "•".repeat(module.enteredLength ?? 0) || "••" : "•• ✓";
   return (
-    <section className="case-bay calculator-module" data-solved={module.solved} aria-label="Calculator module">
-      <div className="calculator-display"><span>{display}</span><Light color={module.light} hidden={vision === "blind" || module.stage !== "confirm"} /></div>
+    <section className="case-bay calculator-module" data-anchor="calculator" data-solved={module.solved} aria-label="Calculator module">
+      <div className="calculator-display" data-anchor="calculator-display"><span>{display}</span><Light color={module.light} hidden={vision === "blind" || module.stage !== "confirm"} /></div>
       <div className="calculator-keypad">
-        {digits.map((digit) => <button key={digit} onClick={() => act?.("calculator-key", digit)} disabled={!act || busy || module.solved} data-confirmed={module.pressed === digit} aria-label={`Calculator key ${digit}`}><BrailleCell value={digit} hidden={vision === "color"} compact /></button>)}
-        <button className="calc-clear" onClick={() => act?.("calculator-clear")} disabled={!act || busy || module.solved || module.stage !== "entry"} aria-label="Clear calculator">C</button>
-        <button className="calc-enter" onClick={() => act?.("calculator-enter")} disabled={!act || busy || module.solved || module.stage !== "entry"} aria-label="Submit calculator result"><CornerDownLeft /></button>
+        {digits.map((digit) => <button key={digit} data-anchor={`calculator-key-${digit}`} onClick={() => act?.("calculator-key", digit)} disabled={!act || busy || module.solved} data-confirmed={module.pressed === digit} aria-label={`Calculator key ${digit}`}><BrailleCell value={digit} hidden={vision === "color"} compact /></button>)}
+        <button className="calc-clear" data-anchor="calculator-clear" onClick={() => act?.("calculator-clear")} disabled={!act || busy || module.solved || module.stage !== "entry"} aria-label="Clear calculator">C</button>
+        <button className="calc-enter" data-anchor="calculator-enter" onClick={() => act?.("calculator-enter")} disabled={!act || busy || module.solved || module.stage !== "entry"} aria-label="Submit calculator result"><CornerDownLeft /></button>
       </div>
     </section>
   );
@@ -451,8 +454,8 @@ function CalculatorModule({ module, vision, act, busy }: { module: CalculatorVie
 function PianoModule({ module, vision, act, busy }: { module: PianoView; vision: "blind" | "color"; act?: (action: ModuleAction, value?: number | string) => void; busy: boolean }) {
   const pressedCount = module.pressedCount ?? 0;
   return (
-    <section className="case-bay piano-module" data-solved={module.solved} aria-label="Piano module">
-      <header className="piano-display">
+    <section className="case-bay piano-module" data-anchor="piano" data-solved={module.solved} aria-label="Piano module">
+      <header className="piano-display" data-anchor="piano-display">
         <div className="piano-mode-light"><Piano /><Light color={module.modeLight} hidden={vision === "blind"} /></div>
         <div className="piano-melody" aria-label="Four note color melody">
           {Array.from({ length: 4 }, (_, index) => <Light key={index} color={module.melody?.[index]} hidden={vision === "blind"} />)}
@@ -463,7 +466,7 @@ function PianoModule({ module, vision, act, busy }: { module: PianoView; vision:
         <div className="piano-white-keys">
           {Array.from({ length: 8 }, (_, index) => {
             const key = index + 1;
-            return <button type="button" key={key} onClick={() => act?.("piano-key", key)} disabled={!act || busy || module.solved} aria-label={`Piano key ${key}`}><BrailleCell value={key} hidden={vision === "color"} compact /></button>;
+            return <button type="button" key={key} data-anchor={`piano-key-${key}`} onClick={() => act?.("piano-key", key)} disabled={!act || busy || module.solved} aria-label={`Piano key ${key}`}><BrailleCell value={key} hidden={vision === "color"} compact /></button>;
           })}
         </div>
         <div className="piano-black-keys" aria-hidden="true">{[1, 2, 4, 5, 6].map((position) => <i key={position} style={{ left: `${position * 12.5}%` }} />)}</div>
@@ -472,12 +475,51 @@ function PianoModule({ module, vision, act, busy }: { module: PianoView; vision:
   );
 }
 
-function SuitcaseBomb({ game, vision, act, busy = false, cursor, onCursorMove }: { game: PublicGameView; vision: "blind" | "color"; act?: (action: ModuleAction, value?: number | string) => void; busy?: boolean; cursor?: CursorPoint; onCursorMove?: (x: number, y: number, active: boolean) => void }) {
+const clamp01 = (value: number) => Math.max(0, Math.min(1, Number.isFinite(value) ? value : 0.5));
+
+function findAnchor(container: HTMLElement, anchor: string) {
+  return Array.from(container.querySelectorAll<HTMLElement>("[data-anchor]")).find((element) => element.dataset.anchor === anchor) ?? null;
+}
+
+function SuitcaseBomb({ game, vision, act, busy = false, cursor, onCursorMove }: { game: PublicGameView; vision: "blind" | "color"; act?: (action: ModuleAction, value?: number | string) => void; busy?: boolean; cursor?: CursorPoint; onCursorMove?: (point: CursorPoint) => void }) {
+  const suitcaseRef = useRef<HTMLDivElement>(null);
+  const pointerRef = useRef<SVGSVGElement>(null);
   function trackPointer(event: ReactPointerEvent<HTMLDivElement>, active: boolean) {
     if (!onCursorMove) return;
-    const rect = event.currentTarget.getBoundingClientRect();
-    onCursorMove(Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width)), Math.max(0, Math.min(1, (event.clientY - rect.top) / rect.height)), active);
+    const container = event.currentTarget;
+    const box = container.getBoundingClientRect();
+    const point: CursorPoint = { x: clamp01((event.clientX - box.left) / box.width), y: clamp01((event.clientY - box.top) / box.height), active };
+    const hovered = event.target instanceof Element ? event.target.closest<HTMLElement>("[data-anchor]") : null;
+    if (hovered && container.contains(hovered) && hovered.dataset.anchor) {
+      const rect = hovered.getBoundingClientRect();
+      point.anchor = hovered.dataset.anchor;
+      point.ax = clamp01((event.clientX - rect.left) / rect.width);
+      point.ay = clamp01((event.clientY - rect.top) / rect.height);
+    }
+    onCursorMove(point);
   }
+  // Place the remote cursor on this screen's copy of the control BLIND is over.
+  useLayoutEffect(() => {
+    const container = suitcaseRef.current;
+    const pointer = pointerRef.current;
+    if (!container || !pointer || !cursor?.active) return;
+    const place = () => {
+      let left = cursor.x;
+      let top = cursor.y;
+      const target = cursor.anchor ? findAnchor(container, cursor.anchor) : null;
+      if (target && typeof cursor.ax === "number" && typeof cursor.ay === "number") {
+        const box = container.getBoundingClientRect();
+        const rect = target.getBoundingClientRect();
+        left = (rect.left - box.left + cursor.ax * rect.width) / box.width;
+        top = (rect.top - box.top + cursor.ay * rect.height) / box.height;
+      }
+      pointer.style.left = `${left * 100}%`;
+      pointer.style.top = `${top * 100}%`;
+    };
+    place();
+    window.addEventListener("resize", place);
+    return () => window.removeEventListener("resize", place);
+  }, [cursor?.active, cursor?.x, cursor?.y, cursor?.anchor, cursor?.ax, cursor?.ay]);
   const renderModule = (module: ModuleKey) => {
     if (module === "cable") return <CableModule key={module} module={game.modules.cable} vision={vision} act={act} busy={busy} />;
     if (module === "slider") return <SliderModule key={module} module={game.modules.slider} vision={vision} act={act} busy={busy} />;
@@ -486,11 +528,11 @@ function SuitcaseBomb({ game, vision, act, busy = false, cursor, onCursorMove }:
     return <PianoModule key={module} module={game.modules.piano} vision={vision} act={act} busy={busy} />;
   };
   return (
-    <div className="bomb-suitcase" data-vision={vision} onPointerMove={(event) => trackPointer(event, true)} onPointerLeave={(event) => trackPointer(event, false)}>
-      {cursor?.active && <MousePointer2 className="remote-cursor" style={{ left: `${cursor.x * 100}%`, top: `${cursor.y * 100}%` }} />}
-      <div className="case-lid"><div className="case-lid-inner"><div className="lid-cables"><i /><i /><i /></div><div className="case-screen"><span /><strong>{game.serial}</strong><i /></div><div className="lid-vents"><i /><i /><i /></div></div></div>
-      <div className="case-hinge"><i /><i /></div>
-      <div className="case-base"><div className="case-module-grid" data-count={game.activeModules.length}>{game.activeModules.map(renderModule)}</div></div>
+    <div ref={suitcaseRef} className="bomb-suitcase" data-vision={vision} onPointerMove={(event) => trackPointer(event, true)} onPointerLeave={(event) => trackPointer(event, false)}>
+      {cursor?.active && <MousePointer2 ref={pointerRef} className="remote-cursor" />}
+      <div className="case-lid" data-anchor="case-lid"><div className="case-lid-inner"><div className="lid-cables"><i /><i /><i /></div><div className="case-screen"><span /><strong>{game.serial}</strong><i /></div><div className="lid-vents"><i /><i /><i /></div></div></div>
+      <div className="case-hinge" data-anchor="case-hinge"><i /><i /></div>
+      <div className="case-base" data-anchor="case-base"><div className="case-module-grid" data-count={game.activeModules.length}>{game.activeModules.map(renderModule)}</div></div>
     </div>
   );
 }
@@ -513,16 +555,26 @@ const CHAT_EXPRESSIONS = [
 function MuteChat({ onChat }: { onChat: (symbol: string) => void }) {
   const [open, setOpen] = useState(false);
   const [page, setPage] = useState<"menu" | "numbers" | "expressions">("menu");
-  function choose(symbol: string) { onChat(symbol); setOpen(false); setPage("menu"); }
+  const [lastSent, setLastSent] = useState("");
+  const sentTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => { if (sentTimer.current) clearTimeout(sentTimer.current); }, []);
+  function choose(symbol: string) {
+    onChat(symbol);
+    setOpen(false);
+    setPage("menu");
+    setLastSent(symbol);
+    if (sentTimer.current) clearTimeout(sentTimer.current);
+    sentTimer.current = setTimeout(() => setLastSent(""), 4_000);
+  }
   const HeaderIcon = page === "numbers" ? Hash : page === "expressions" ? Smile : MessageCircle;
-  return <Popover open={open} onOpenChange={(next) => { setOpen(next); if (!next) setPage("menu"); }}><PopoverTrigger asChild><Button className="mute-chat-trigger" aria-label="Open symbol chat"><MessageCircle /></Button></PopoverTrigger><PopoverContent className="mute-chat-popover" align="end" sideOffset={9}><header className="mute-chat-header">{page !== "menu" && <button onClick={() => setPage("menu")} aria-label="Back to symbol categories"><ArrowLeft /></button>}<HeaderIcon aria-hidden="true" /></header>{page === "menu" && <div className="chat-mode-grid"><button onClick={() => setPage("numbers")} aria-label="Open numbers"><Hash /></button><button onClick={() => setPage("expressions")} aria-label="Open expressions"><Smile /></button></div>}{page === "numbers" && <div className="chat-symbol-grid chat-number-grid">{Array.from({ length: 11 }, (_, number) => <button key={number} onClick={() => choose(String(number))}>{number}</button>)}</div>}{page === "expressions" && <div className="chat-symbol-grid chat-expression-grid">{CHAT_EXPRESSIONS.map(({ symbol, label }) => <button key={label} onClick={() => choose(symbol)} aria-label={label}>{symbol}</button>)}</div>}</PopoverContent></Popover>;
+  return <Popover open={open} onOpenChange={(next) => { setOpen(next); if (!next) setPage("menu"); }}><PopoverTrigger asChild><Button className="mute-chat-trigger mute-sign-button" aria-label="Send a sign to DEAF"><Hand aria-hidden="true" /><span>{lastSent ? <>SENT <b>{lastSent}</b></> : "SEND A SIGN"}</span></Button></PopoverTrigger><PopoverContent className="mute-chat-popover" side="top" align="center" sideOffset={9}><header className="mute-chat-header">{page !== "menu" && <button onClick={() => setPage("menu")} aria-label="Back to symbol categories"><ArrowLeft /></button>}<HeaderIcon aria-hidden="true" /></header>{page === "menu" && <div className="chat-mode-grid"><button onClick={() => setPage("numbers")} aria-label="Open numbers"><Hash /></button><button onClick={() => setPage("expressions")} aria-label="Open expressions"><Smile /></button></div>}{page === "numbers" && <div className="chat-symbol-grid chat-number-grid">{Array.from({ length: 11 }, (_, number) => <button key={number} onClick={() => choose(String(number))}>{number}</button>)}</div>}{page === "expressions" && <div className="chat-symbol-grid chat-expression-grid">{CHAT_EXPRESSIONS.map(({ symbol, label }) => <button key={label} onClick={() => choose(symbol)} aria-label={label}>{symbol}</button>)}</div>}</PopoverContent></Popover>;
 }
 
 type FeedItem =
   | { kind: "action"; key: string; seq: number; text: string; error: boolean }
   | { kind: "message"; key: string; seq: number; message: ChatMessageView };
 
-function CaseFeed({ role, actionLog, chatEnabled, messages, onSend, busy }: { role: Role; actionLog: Array<ActionLogEntry | string>; chatEnabled: boolean; messages: ChatMessageView[]; onSend: (text: string) => void; busy: boolean }) {
+function CaseFeed({ role, actionLog, chatEnabled, messages, onSend, onSign, busy }: { role: Role; actionLog: Array<ActionLogEntry | string>; chatEnabled: boolean; messages: ChatMessageView[]; onSend: (text: string) => void; onSign?: (symbol: string) => void; busy: boolean }) {
   const [draft, setDraft] = useState("");
   const streamRef = useRef<HTMLDivElement>(null);
   const readOnly = role === "specialist";
@@ -550,7 +602,7 @@ function CaseFeed({ role, actionLog, chatEnabled, messages, onSend, busy }: { ro
   }, [newest]);
   return <aside className="case-feed" data-role={role}><header><Radio /><b>CASE FEED</b>{chatEnabled && <span><MessageCircle />{role === "observer" ? "OUTGOING ONLY" : role === "specialist" ? "READ + SIGNAL" : "TEAM CHAT"}</span>}</header><div ref={streamRef} className="case-feed-stream" aria-live="polite">{items.map((item, index) => item.kind === "action"
     ? <article className="case-action-entry" data-tone={item.error ? "error" : "info"} key={item.key}>{item.error ? <span className="case-alert-mark" aria-label="Wrong answer">!</span> : <small>{index === items.length - 1 ? "NOW" : "LOG"}</small>}<p>{item.text}</p></article>
-    : <article className="case-chat-entry" key={item.key} data-role={item.message.senderRole}><div><b>{ROLE_META[item.message.senderRole].monkey} {item.message.senderName}</b><small>{ROLE_META[item.message.senderRole].short}</small></div><p>{item.message.text}</p></article>)}</div>{chatEnabled && (readOnly ? <div className="case-feed-readonly"><span>🙊</span><div><b>MUTE CANNOT TYPE</b><small>Use the symbol button in the manual.</small></div></div> : <form className="case-feed-form" onSubmit={submit}><Input value={draft} onChange={(event) => setDraft(event.target.value.slice(0, 240))} placeholder={role === "observer" ? "Send a message…" : "Message the team…"} disabled={busy} aria-label="Team chat message" /><Button type="submit" disabled={busy || !draft.trim()} aria-label="Send message"><Send /></Button></form>)}</aside>;
+    : <article className="case-chat-entry" key={item.key} data-role={item.message.senderRole}><div><b>{ROLE_META[item.message.senderRole].monkey} {item.message.senderName}</b><small>{ROLE_META[item.message.senderRole].short}</small></div><p>{item.message.text}</p></article>)}</div>{readOnly && onSign ? <div className="case-feed-sign"><MuteChat onChat={onSign} /><small>You can&apos;t type or talk. DEAF sees your sign right away.</small></div> : chatEnabled && !readOnly && (<form className="case-feed-form" onSubmit={submit}><Input value={draft} onChange={(event) => setDraft(event.target.value.slice(0, 240))} placeholder={role === "observer" ? "Send a message…" : "Message the team…"} disabled={busy} aria-label="Team chat message" /><Button type="submit" disabled={busy || !draft.trim()} aria-label="Send message"><Send /></Button></form>)}</aside>;
 }
 
 function ManualSteps({ steps }: { steps: ReactNode[] }) {
@@ -631,7 +683,7 @@ function PianoManual() {
   return <section className="manual-page wide-manual-page" data-module="piano"><div className="manual-page-title"><Piano /></div><ManualSteps steps={[<span className="visual-pair" key="mode"><Piano /><Light color={mode} /></span>, <span className="visual-light-row" key="melody">{LIGHT_COLORS.map((color) => <Light key={color} color={color} />)}</span>, <span className="manual-piano-sequence" key="keys">{[1, 3, 5, 7].map((key) => <span key={key}><BrailleCell value={key} compact /><b>{key}</b></span>)}</span>]} /><ManualRulePager row={row} count={LIGHT_COLORS.length} onChange={setRow} /><div className="piano-rule-focus"><div className="piano-rule-mode"><Piano /><Light color={mode} /></div><div className="piano-rule-grid">{LIGHT_COLORS.map((color) => { const key = PIANO_RULES[mode][color]; return <div key={color}><Light color={color} /><ArrowRight /><span><BrailleCell value={key} compact /><b>{key}</b></span></div>; })}</div></div></section>;
 }
 
-function SpecialistPanel({ game, onChat }: { game: PublicGameView; onChat: (symbol: string) => void }) {
+function SpecialistPanel({ game }: { game: PublicGameView }) {
   const pages = [
     { key: "cable" as const, icon: Scissors, component: <CableManual /> },
     { key: "slider" as const, icon: SlidersVertical, component: <SliderManual /> },
@@ -643,7 +695,7 @@ function SpecialistPanel({ game, onChat }: { game: PublicGameView; onChat: (symb
   const [page, setPage] = useState(firstActivePage);
   const PageIcon = pages[page].icon;
 
-  return <div className="manual-book"><header><div className="manual-header-symbols"><BookOpen /><b>{game.level}</b><span>·</span><PageIcon /><b>{page + 1}/{pages.length}</b></div><MuteChat onChat={onChat} /></header><div className="manual-pages">{pages[page].component}</div><footer className="manual-pagination"><button type="button" onClick={() => setPage((current) => Math.max(0, current - 1))} disabled={page === 0} aria-label="Previous manual page"><ChevronLeft /></button><div aria-label={`Manual page ${page + 1} of ${pages.length}`}>{pages.map((manualPage, index) => { const Icon = manualPage.icon; return <button type="button" key={manualPage.key} data-active={index === page} data-needed={game.activeModules.includes(manualPage.key)} onClick={() => setPage(index)} aria-label={`Open manual page ${index + 1}`}><Icon /><span>{index + 1}</span></button>; })}</div><button type="button" onClick={() => setPage((current) => Math.min(pages.length - 1, current + 1))} disabled={page === pages.length - 1} aria-label="Next manual page"><ChevronRight /></button></footer></div>;
+  return <div className="manual-book"><header><div className="manual-header-symbols"><BookOpen /><b>{game.level}</b><span>·</span><PageIcon /><b>{page + 1}/{pages.length}</b></div></header><div className="manual-pages">{pages[page].component}</div><footer className="manual-pagination"><button type="button" onClick={() => setPage((current) => Math.max(0, current - 1))} disabled={page === 0} aria-label="Previous manual page"><ChevronLeft /></button><div aria-label={`Manual page ${page + 1} of ${pages.length}`}>{pages.map((manualPage, index) => { const Icon = manualPage.icon; return <button type="button" key={manualPage.key} data-active={index === page} data-needed={game.activeModules.includes(manualPage.key)} onClick={() => setPage(index)} aria-label={`Open manual page ${index + 1}`}><Icon /><span>{index + 1}</span></button>; })}</div><button type="button" onClick={() => setPage((current) => Math.min(pages.length - 1, current + 1))} disabled={page === pages.length - 1} aria-label="Next manual page"><ChevronRight /></button></footer></div>;
 }
 
 const TUTORIAL_COACH = [
@@ -653,7 +705,7 @@ const TUTORIAL_COACH = [
   { role: "observer" as Role, title: "DEAF: SEND THE CLUE", text: "Tell the team: RED LIGHT + 3 CABLES. The clue appears in the Case Feed." },
   { role: "specialist" as Role, title: "MUTE: FIND THE MATCHING PICTURE", text: "In the manual, match 3 cables + red light. The picture says to cut the blue cable." },
   { role: "specialist" as Role, title: "MUTE: SEND THE ANSWER", text: "The blue cable is first. Send the number 1 to the team." },
-  { role: "operator" as Role, title: "BLIND: LEARN WHAT A MISTAKE LOOKS LIKE", text: "For practice, click the middle cable. BLIND sees the error in the Case Feed." },
+  { role: "operator" as Role, title: "BLIND: LEARN WHAT A MISTAKE LOOKS LIKE", text: "For practice, click the middle cable. Everyone sees the error in the Case Feed." },
   { role: "operator" as Role, title: "BLIND: CUT THE CORRECT CABLE", text: "MUTE sent 1. Click the top cable. The diagonal gap means it is cut." },
 ] as const;
 
@@ -690,10 +742,10 @@ function TutorialFeed({ entries, practiceMistakes }: { entries: TutorialFeedEntr
   const streamRef = useRef<HTMLDivElement>(null);
   const newest = entries.at(-1)?.id;
   useEffect(() => { if (streamRef.current) streamRef.current.scrollTop = streamRef.current.scrollHeight; }, [newest]);
-  return <aside className="tutorial-case-feed"><header><Radio /><b>CASE FEED</b><span><MessageCircle /> MESSAGES + EVENTS</span></header><div ref={streamRef}>{entries.map((entry) => <article key={entry.id} data-kind={entry.kind} data-role={entry.role ?? "system"}><span>{entry.role ? ROLE_META[entry.role].monkey : entry.kind === "error" ? "!" : entry.kind === "solved" ? "✓" : "●"}</span><p>{entry.text}</p></article>)}</div><footer><ShieldAlert /><span>{practiceMistakes}/3</span><small>Errors appear here for BLIND during normal play.</small></footer></aside>;
+  return <aside className="tutorial-case-feed"><header><Radio /><b>CASE FEED</b><span><MessageCircle /> MESSAGES + EVENTS</span></header><div ref={streamRef}>{entries.map((entry) => <article key={entry.id} data-kind={entry.kind} data-role={entry.role ?? "system"}><span>{entry.role ? ROLE_META[entry.role].monkey : entry.kind === "error" ? "!" : entry.kind === "solved" ? "✓" : "●"}</span><p>{entry.text}</p></article>)}</div><footer><ShieldAlert /><span>{practiceMistakes}/3</span><small>In real rounds, errors show in everyone&apos;s Case Feed.</small></footer></aside>;
 }
 
-function TutorialExperience({ game, role, players, busy, onAction, onCursorMove }: { game: PublicGameView; role: Role; players: Player[]; busy: boolean; onAction: (action: TutorialAction, value?: number | string) => void; onCursorMove?: (x: number, y: number, active: boolean) => void }) {
+function TutorialExperience({ game, role, players, busy, onAction, onCursorMove }: { game: PublicGameView; role: Role; players: Player[]; busy: boolean; onAction: (action: TutorialAction, value?: number | string) => void; onCursorMove?: (point: CursorPoint) => void }) {
   const tutorial = game.tutorial;
   if (!tutorial) return null;
   const step = tutorial.step;
@@ -809,8 +861,11 @@ function RoleCountdownCard({ role, seconds }: { role: Role; seconds: number }) {
   return <div className="role-card-overlay" role="status" aria-live="polite"><div className="role-card" data-role={role}><span className="role-card-count" aria-label={`Starting in ${seconds}`}>{seconds}</span><span className="role-card-monkey" aria-hidden="true">{meta.monkey}</span><small>YOU ARE</small><h2>{meta.short}</h2><p>{ROLE_JOBS[role]}</p><RoleSenses role={role} /></div></div>;
 }
 
+// Shows one tip at a time so a case with several new modules never squeezes the bomb.
 function CoachStrip({ role, modules, onDismiss }: { role: Role; modules: ModuleKey[]; onDismiss: (module: ModuleKey) => void }) {
-  return <section className="coach-strip" aria-label="Your move">{modules.map((module) => { const Icon = MODULE_META[module].icon; return <article key={module} data-role={role}><span className="coach-badge"><Lightbulb aria-hidden="true" /> YOUR MOVE</span><b className="coach-module"><Icon aria-hidden="true" />{MODULE_META[module].label}</b><p>{COACH_LINES[module][role]}</p><button type="button" onClick={() => onDismiss(module)} aria-label={`Hide the ${MODULE_META[module].label.toLowerCase()} tip`}><X /></button></article>; })}</section>;
+  const first = modules[0];
+  const Icon = MODULE_META[first].icon;
+  return <section className="coach-strip" aria-label="Your move"><article key={first} data-role={role}><span className="coach-badge"><Lightbulb aria-hidden="true" /> YOUR MOVE{modules.length > 1 && <i>1 OF {modules.length}</i>}</span><b className="coach-module"><Icon aria-hidden="true" />{MODULE_META[first].label}</b><p>{COACH_LINES[first][role]}</p><button type="button" onClick={() => onDismiss(first)} aria-label={modules.length > 1 ? `Got it, show the next tip` : `Hide the ${MODULE_META[first].label.toLowerCase()} tip`}><X /></button></article></section>;
 }
 
 type DeveloperControls = {
@@ -822,7 +877,7 @@ type DeveloperControls = {
   onTutorialAction: (action: TutorialAction, value?: number | string) => void;
   onChat: (symbol: string) => void;
   onMessage: (text: string) => void;
-  onCursorMove: (x: number, y: number, active: boolean) => void;
+  onCursorMove: (point: CursorPoint) => void;
   onReady: () => void;
   onWaitingPreview: () => void;
   onTutorialPreview: () => void;
@@ -880,18 +935,19 @@ function Game({ data, onData, developer, onLeave, banner }: { data: RoomSnapshot
     finally { setBusy(false); }
   }, [developer, onData]);
 
-  const reportCursor = useCallback((x: number, y: number, active: boolean) => {
-    cursorRef.current = { x, y, active };
-    if (developer) return developer.onCursorMove(x, y, active);
+  const reportCursor = useCallback((point: CursorPoint) => {
+    cursorRef.current = point;
+    if (developer) return developer.onCursorMove(point);
+    const { active } = point;
     const timestamp = Date.now();
     if (active && timestamp - cursorLastSent.current < 90) return;
     cursorLastSent.current = timestamp;
-    sendCursor(x, y, active);
+    sendCursor(point);
   }, [developer]);
 
   useEffect(() => {
     if (developer || role !== "operator" || (game.phase !== "playing" && game.phase !== "tutorial")) return;
-    const heartbeat = window.setInterval(() => { const point = cursorRef.current; if (point.active) sendCursor(point.x, point.y, point.active); }, 300);
+    const heartbeat = window.setInterval(() => { const point = cursorRef.current; if (point.active) sendCursor(point); }, 300);
     return () => window.clearInterval(heartbeat);
   }, [developer, game.phase, role]);
 
@@ -924,7 +980,7 @@ function Game({ data, onData, developer, onLeave, banner }: { data: RoomSnapshot
     finally { setBusy(false); }
   }
 
-  const caseFeed = <CaseFeed role={role} actionLog={game.actionLog} chatEnabled={game.chatEnabled} messages={game.messages} onSend={sendMessage} busy={busy} />;
+  const caseFeed = <CaseFeed role={role} actionLog={game.actionLog} chatEnabled={game.chatEnabled} messages={game.messages} onSend={sendMessage} onSign={sendChat} busy={busy} />;
 
   return <main className="game-shell" data-role={role} data-developer={Boolean(developer)}>
     <header className="game-header"><div className="game-header-start"><Link className="game-brand" href="/"><Bomb /><b>BOMBA<span>NANA</span></b></Link>{onLeave && !developer && <button type="button" className="leave-room-button" onClick={onLeave} aria-label="Leave room"><LogOut /><span>LEAVE</span></button>}</div><div className="room-pill"><Users /> {developer ? "TEST MODE" : "ROOM"} <b>{data.room.code}</b></div><div className="level-pill">{game.phase === "tutorial" ? <b>TUTORIAL</b> : <>LEVEL <b>{game.level === 11 ? "∞" : game.level}</b></>}</div><div className="timer-block" data-urgent={remaining < 30_000 && game.phase === "playing"}><Clock3 /><div><strong>{game.phase === "waiting" ? "READY" : prestart > 0 ? `0:0${prestart}` : formatTime(remaining)}</strong><Progress value={game.phase === "waiting" ? 100 : timePercent} /></div></div><div className="strike-block"><ShieldAlert />{Array.from({ length: game.maxMistakes }, (_, index) => <i key={index} data-hit={game.phase === "tutorial" ? index < (game.tutorial?.practiceMistakes ?? 0) : index < game.mistakes} />)}</div></header>
@@ -933,12 +989,12 @@ function Game({ data, onData, developer, onLeave, banner }: { data: RoomSnapshot
     <div className="progress-rail"><span>{game.phase === "tutorial" ? `${game.tutorial?.step ?? 0}/8 STEPS` : `${game.completed}/${game.moduleCount} MODULES`}</span><Progress value={game.phase === "tutorial" ? ((game.tutorial?.step ?? 0) / 8) * 100 : (game.completed / game.moduleCount) * 100} /><span>{game.phase === "tutorial" ? "INFORMATION CHAIN" : game.levelTitle}</span></div>
     {banner && <p className="room-notice game-notice" role="status">{banner}</p>}
     {error && <p className="game-error">{error}</p>}
-    {coachModules.length > 0 && <CoachStrip role={role} modules={coachModules} onDismiss={(module) => markTipsLearned([`${role}:${module}`], !developer)} />}
     {game.phase === "playing" && prestart > 0 && <RoleCountdownCard role={role} seconds={prestart} />}
     {game.phase === "waiting" ? <RoundWaitingRoom data={data} onReady={ready} onSwitchRole={switchRole} busy={busy} developer={Boolean(developer)} /> : game.phase === "tutorial" ? <TutorialExperience game={game} role={role} players={data.room.players} busy={busy} onAction={tutorialAct} onCursorMove={role === "operator" ? reportCursor : undefined} /> : <section className="game-workspace" data-role={role}>
+      {coachModules.length > 0 && <CoachStrip role={role} modules={coachModules} onDismiss={(module) => markTipsLearned([`${role}:${module}`], !developer)} />}
       {role === "operator" && <SuitcaseBomb game={game} vision="blind" act={act} busy={busy || prestart > 0} onCursorMove={reportCursor} />}
       {role === "observer" && <ObserverPanel game={game} feed={caseFeed} />}
-      {role === "specialist" && <SpecialistPanel key={`${game.level}-${game.activeModules.join("-")}`} game={game} onChat={sendChat} />}
+      {role === "specialist" && <SpecialistPanel key={`${game.level}-${game.activeModules.join("-")}`} game={game} />}
       {role !== "observer" && caseFeed}
     </section>}
   </main>;
@@ -1019,7 +1075,7 @@ function DeveloperMode({ onExit }: { onExit: () => void }) {
     return lines;
   }, [state]);
 
-  return <Game data={data} onData={() => undefined} developer={{ role, level: state.level, onRoleChange: setRole, onLevelChange: loadLevel, onAction: act, onTutorialAction: tutorialAct, onChat: (symbol) => setMuteSignal({ symbol, updatedAt: Date.now(), active: true }), onMessage: (text) => role !== "specialist" && setState((current) => { const seq = (current.feedSeq ?? 0) + 1; return { ...current, feedSeq: seq, messages: [...current.messages, { id: makeId(), senderId: `developer-${role}`, senderRole: role, senderName: "Test Player", text, sentAt: Date.now(), seq }].slice(-40) }; }), onCursorMove: (x, y, active) => active && setCursor({ x, y, active }), onReady: ready, onWaitingPreview: () => setState((current) => ({ ...current, phase: "waiting", lastResult: "cleared", startAt: null, messages: [] })), onTutorialPreview: loadTutorial, onReset: () => state.phase === "tutorial" ? loadTutorial() : loadLevel(state.level), onExit, solution }} />;
+  return <Game data={data} onData={() => undefined} developer={{ role, level: state.level, onRoleChange: setRole, onLevelChange: loadLevel, onAction: act, onTutorialAction: tutorialAct, onChat: (symbol) => setMuteSignal({ symbol, updatedAt: Date.now(), active: true }), onMessage: (text) => role !== "specialist" && setState((current) => { const seq = (current.feedSeq ?? 0) + 1; return { ...current, feedSeq: seq, messages: [...current.messages, { id: makeId(), senderId: `developer-${role}`, senderRole: role, senderName: "Test Player", text, sentAt: Date.now(), seq }].slice(-40) }; }), onCursorMove: (point) => point.active && setCursor(point), onReady: ready, onWaitingPreview: () => setState((current) => ({ ...current, phase: "waiting", lastResult: "cleared", startAt: null, messages: [] })), onTutorialPreview: loadTutorial, onReset: () => state.phase === "tutorial" ? loadTutorial() : loadLevel(state.level), onExit, solution }} />;
 }
 
 const HOST_OFFLINE_BANNER = "The host's browser went offline. If they don't come back in a few seconds, another player takes over as host automatically.";

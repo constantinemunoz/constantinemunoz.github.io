@@ -133,7 +133,7 @@ function cutCorrectCable(engine, id = HOST) {
   const strike = blindGame.actionLog.at(-1);
   const chatSeqs = blindGame.messages.map((message) => message.seq);
   assert(strike.tone === "error" && chatSeqs[0] < strike.seq && strike.seq < chatSeqs[1], "feed order: chat, then the wrong answer, then the next chat");
-  assert(!engine.snapshotFor("uid-deaf-2").room.game.actionLog.some((entry) => entry.tone === "error"), "wrong-answer notices stay with BLIND");
+  for (const id of ["uid-deaf-2", "uid-mute-2"]) assert(engine.snapshotFor(id).room.game.actionLog.some((entry) => entry.tone === "error"), "wrong-answer alerts reach every role");
 }
 
 // --- Host handoff and takeover -------------------------------------------------

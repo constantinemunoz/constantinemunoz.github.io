@@ -141,8 +141,8 @@ visibilityState.actionLog = [{ text: "Cable severed. Circuit stable.", seq: 3 },
 const blindView = publicStateForRole(visibilityState, "operator", "blind-id");
 const deafView = publicStateForRole(visibilityState, "observer", "deaf-id");
 const muteView = publicStateForRole(visibilityState, "specialist", "mute-id");
-assert(blindView.actionLog.length === 2, "BLIND must receive case-feed errors");
-assert(deafView.actionLog.length === 1 && muteView.actionLog.length === 1, "Case-feed errors leaked beyond BLIND");
+assert(blindView.actionLog.length === 2, "BLIND must receive the full case feed");
+assert(deafView.actionLog.length === 2 && muteView.actionLog.length === 2 && deafView.actionLog[1].tone === "error", "Every role must receive the wrong-answer alerts");
 assert(deafView.messages.length === 1 && deafView.messages[0].senderId === undefined && deafView.messages[0].text === "red light", "DEAF chat visibility is wrong");
 assert(blindView.messages.length === 2 && muteView.messages.length === 2, "BLIND and MUTE should receive the full text chat");
 

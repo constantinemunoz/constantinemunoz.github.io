@@ -2293,3 +2293,23 @@ html, body { width: 100%; height: 100%; overflow: hidden; overscroll-behavior: n
 .role-card h2 { margin: 0; font-size: clamp(2.4rem, 8vw, 3.4rem); line-height: 1; letter-spacing: -.02em; }
 .role-card > p { max-width: 340px; margin: 4px 0 14px; color: #33425b; font-size: 1rem; font-weight: 700; line-height: 1.35; }
 .role-card .role-senses { width: 100%; }
+
+/* MUTE's sign button at the bottom of the case feed. */
+.case-feed-sign { display: grid; gap: 7px; padding: 10px; border-top: 2px solid #d5e3ed; background: #fff0f5; }
+.case-feed-sign .mute-sign-button { width: 100%; min-height: 54px; display: inline-flex; align-items: center; justify-content: center; gap: 10px; border: 3px solid var(--ink); border-radius: 14px; background: var(--yellow); color: var(--ink); box-shadow: 4px 4px 0 var(--ink); font: 950 1rem/1 var(--font-mono); letter-spacing: .08em; animation: sign-button-glow 2.4s ease-in-out infinite; }
+.case-feed-sign .mute-sign-button:hover { background: #ffe680; color: var(--ink); }
+.case-feed-sign .mute-sign-button:active { transform: translate(2px, 2px); box-shadow: 2px 2px 0 var(--ink); }
+.case-feed-sign .mute-sign-button svg { width: 24px; height: 24px; }
+.case-feed-sign .mute-sign-button b { display: inline-grid; place-items: center; min-width: 30px; height: 30px; margin-left: 4px; padding: 0 6px; border: 2px solid var(--ink); border-radius: 8px; background: #fff; font-size: 1.15rem; }
+.case-feed-sign small { color: #6b5a74; font: 800 .66rem/1.3 var(--font-mono); text-align: center; }
+@keyframes sign-button-glow { 0%, 100% { box-shadow: 4px 4px 0 var(--ink), 0 0 0 0 rgb(239 91 132 / 0); } 50% { box-shadow: 4px 4px 0 var(--ink), 0 0 0 6px rgb(239 91 132 / .25); } }
+@media (prefers-reduced-motion: reduce) { .case-feed-sign .mute-sign-button { animation: none; } }
+.coach-badge i { margin-left: 4px; padding: 2px 5px; border-radius: 999px; background: var(--yellow); color: var(--ink); font-style: normal; font-size: .58rem; }
+/* Float the tip over the top of the first column (the suitcase lid or the
+   manual header) so it never takes height away from the controls. */
+@media (min-width: 781px) {
+  .game-workspace { position: relative; }
+  .game-workspace > .coach-strip { position: absolute; z-index: 25; grid-column: 1 / 2; grid-row: 1 / 2; top: 6px; left: 10px; right: 10px; margin: 0; pointer-events: none; }
+  .game-workspace > .coach-strip > article { pointer-events: auto; padding: 8px 10px; box-shadow: 3px 3px 0 var(--ink); }
+  .game-workspace > .coach-strip p { font-size: .86rem; }
+}

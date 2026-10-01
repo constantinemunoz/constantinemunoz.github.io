@@ -36,7 +36,7 @@ Verification of the new setup, all against local Firebase emulators running the 
 
 | Check | Result |
 | --- | --- |
-| `pnpm run test` (22,000 game rounds + 115 room referee checks) | pass |
+| `pnpm run test` (22,000 game rounds + 116 room referee checks) | pass |
 | Security rules: 37 allowed and forbidden reads and writes across four users | pass |
 | Three browsers: create, join, ready, timer, solve Level 1, cursor and sign relay, reload, rejoin a closed seat, host closes tab and another player takes over, play Level 2, leave | pass, no console errors |
 | Three browsers: interactive tutorial with role-locked steps, automatic start of Level 1, text chat privacy for DEAF, MUTE cannot type | pass, no console errors |

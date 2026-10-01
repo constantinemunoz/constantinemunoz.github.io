@@ -433,7 +433,7 @@ export function applyTutorialAction(state: GameState, role: Role, action: Tutori
   if (action === "practice-error") {
     if (Number(value) !== 1) return { ok: false, error: "Try the highlighted practice-error cable." };
     tutorial.practiceMistakes = 1;
-    tutorial.feed.push(tutorialEntry("error", "Practice error: wrong cable. In a normal round, BLIND receives the strike.", "operator"));
+    tutorial.feed.push(tutorialEntry("error", "Practice error: wrong cable. In a normal round, the team gets a strike and everyone sees this alert.", "operator"));
   }
   if (action === "solve-cable") {
     if (Number(value) !== 0) return { ok: false, error: "Use the answer MUTE sent." };
@@ -484,8 +484,8 @@ export function publicStateForRole(state: GameState, role: Role, playerId = "") 
     durationMs: state.durationMs,
     mistakes: state.mistakes,
     maxMistakes: state.maxMistakes,
-    // Wrong-answer notices go to BLIND only, the player who pressed the control.
-    actionLog: (role === "operator" ? state.actionLog : state.actionLog.filter((entry) => entry.tone !== "error")).slice(-8),
+    // Every role sees the full feed, including the red wrong-answer alerts.
+    actionLog: state.actionLog.slice(-8),
     completed: completedModules(state),
     moduleCount: enabledModules.length,
     chatEnabled: state.chatEnabled,
