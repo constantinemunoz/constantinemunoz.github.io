@@ -2214,3 +2214,102 @@ html, body { width: 100%; height: 100%; overflow: hidden; overscroll-behavior: n
 .leave-room-button svg { width: 14px; height: 14px; }
 .leave-room-button:hover { background: var(--ink); color: var(--yellow); }
 @media (max-width: 780px) { .leave-room-button span { display: none; } }
+
+/* Deaf Observer: live bomb on the left; Mute's signs stacked above the case feed on the right. */
+.game-workspace[data-role="observer"] > .deaf-live-pane { border-radius: 18px; }
+.deaf-side { min-width: 0; min-height: 0; display: grid; grid-template-rows: minmax(190px, 2fr) minmax(0, 3fr); gap: 12px; }
+.deaf-side > .deaf-mute-pane { min-height: 0; overflow: hidden; border-radius: 18px; }
+.deaf-side .mute-signal-stage { height: 100%; min-height: 0; grid-template-rows: minmax(0, 1fr) auto auto; align-items: center; gap: 4px; padding: 10px 10px 12px; }
+.deaf-side .mute-signal-space { min-height: 0; align-self: end; }
+.deaf-side .mute-signal-bubble { min-width: 70px; min-height: 58px; padding: 6px 14px; border-width: 3px; box-shadow: 4px 4px 0 var(--yellow); font-size: clamp(2rem, 3vw, 3rem); }
+.deaf-side .mute-signal-bubble::after { bottom: -14px; width: 20px; height: 20px; border-width: 3px; }
+.deaf-side .mute-monkey { width: auto; min-height: 0; padding-top: 10px; }
+.deaf-side .mute-monkey > span { font-size: clamp(3.2rem, 4.6vw, 4.6rem); }
+.deaf-side .mute-hand { width: 36px; height: 36px; bottom: 0; }
+.deaf-side .mute-signal-stage > small { margin-top: 4px; font-size: .62rem; }
+@media (max-width: 1050px) {
+  .deaf-side { grid-template-rows: auto minmax(260px, auto); }
+  .deaf-side > .deaf-mute-pane { min-height: 230px; }
+}
+
+/* Wrong answers in the case feed: bright red with an exclamation mark. */
+.case-action-entry[data-tone="error"] { align-items: center; border: 2px solid #b30f17; background: #ff2d36; box-shadow: 0 0 0 3px rgb(255 45 54 / .22); animation: case-alert-pop .28s cubic-bezier(.2, .9, .25, 1.3) both; }
+.case-action-entry[data-tone="error"] p { color: #fff; font-weight: 900; }
+.case-alert-mark { width: 28px; height: 28px; display: grid; place-items: center; border-radius: 50%; background: #fff; color: #d0141c; font: 950 1.05rem/1 "Arial Black", Arial, sans-serif; }
+@keyframes case-alert-pop { from { opacity: 0; transform: scale(.94); } to { opacity: 1; transform: scale(1); } }
+@media (max-width: 780px) {
+  /* Phones stack bomb, Mute signs and case feed; let the column scroll. */
+  .game-workspace[data-role="observer"] { overflow-y: auto; }
+  .game-workspace[data-role="observer"] > .deaf-live-pane { min-height: 420px; }
+  .deaf-side { grid-template-rows: auto auto; }
+  .deaf-side > .case-feed { min-height: 300px; }
+}
+
+/* "Your move" tips: one line per module, shown until the team clears it once. */
+.coach-strip { flex: 0 0 auto; display: grid; gap: 8px; margin: 2px 0 10px; }
+.coach-strip > article { position: relative; display: grid; grid-template-columns: auto auto minmax(0, 1fr) auto; align-items: center; gap: 12px; padding: 10px 12px; border: 2px solid var(--ink); border-radius: 14px; background: #fff3b0; box-shadow: 4px 4px 0 var(--ink); animation: coach-in .35s cubic-bezier(.2, .9, .25, 1.2) both; }
+.coach-badge { display: inline-flex; align-items: center; gap: 5px; padding: 6px 9px; border-radius: 999px; background: var(--ink); color: var(--yellow); font: 950 .66rem/1 var(--font-mono); letter-spacing: .1em; white-space: nowrap; }
+.coach-badge svg { width: 14px; height: 14px; }
+.coach-module { display: inline-flex; align-items: center; gap: 6px; color: var(--ink); font: 950 .7rem/1 var(--font-mono); letter-spacing: .08em; white-space: nowrap; }
+.coach-module svg { width: 15px; height: 15px; }
+.coach-strip p { margin: 0; color: var(--ink); font: 800 .92rem/1.35 "Arial Rounded MT Bold", "Avenir Next", Arial, sans-serif; }
+.coach-strip button { width: 30px; height: 30px; display: grid; place-items: center; padding: 0; border: 2px solid var(--ink); border-radius: 50%; background: #fff; color: var(--ink); }
+.coach-strip button svg { width: 15px; height: 15px; }
+@keyframes coach-in { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: translateY(0); } }
+@media (max-width: 780px) {
+  .coach-strip > article { grid-template-columns: auto minmax(0, 1fr) auto; row-gap: 6px; padding: 8px 10px; }
+  .coach-badge { grid-column: 1; }
+  .coach-module { grid-column: 2; }
+  .coach-strip p { grid-column: 1 / -1; grid-row: 2; font-size: .84rem; }
+  .coach-strip button { grid-column: 3; grid-row: 1; width: 26px; height: 26px; }
+}
+
+/* See / hear / talk: full tiles on the countdown card, small chips in the role banner. */
+.role-senses { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin: 0; padding: 0; list-style: none; }
+.role-senses li { position: relative; display: grid; justify-items: center; gap: 4px; padding: 12px 8px 10px; border: 2px solid var(--ink); border-radius: 14px; background: #eafbef; color: var(--ink); }
+.role-senses li[data-can="false"] { background: #ffe3e3; }
+.role-senses li > svg { width: 26px; height: 26px; }
+.role-senses b { font: 950 .78rem/1 var(--font-mono); letter-spacing: .1em; }
+.role-senses small { color: #4e5d74; font-size: .72rem; font-weight: 700; text-align: center; line-height: 1.2; }
+.sense-mark { position: absolute; top: -9px; right: -9px; width: 24px; height: 24px; display: grid; place-items: center; border: 2px solid var(--ink); border-radius: 50%; background: #2fbf63; color: #fff; font: 950 .8rem/1 Arial, sans-serif; }
+.role-senses li[data-can="false"] .sense-mark { background: #e5303a; }
+.role-senses[data-compact="true"] { display: flex; gap: 6px; }
+.role-senses[data-compact="true"] li { display: inline-flex; align-items: center; gap: 5px; padding: 5px 9px 5px 7px; border-width: 1.5px; border-radius: 999px; }
+.role-senses[data-compact="true"] li > svg { width: 15px; height: 15px; }
+.role-senses[data-compact="true"] b { font-size: .62rem; }
+.role-senses[data-compact="true"] .sense-mark { position: static; width: 16px; height: 16px; border-width: 1.5px; font-size: .58rem; }
+.role-banner { grid-template-columns: auto minmax(0, 1fr) auto; }
+@media (max-width: 1050px) { .role-banner { grid-template-columns: auto minmax(0, 1fr) auto; } .role-banner > p { display: none; } }
+@media (max-width: 780px) { .role-banner { grid-template-columns: minmax(0, 1fr); gap: 6px; } .role-banner .role-senses { justify-self: start; } .role-senses[data-compact="true"] li { padding: 3px 7px 3px 5px; } }
+
+/* Role card during the 3-second countdown. */
+.role-card-overlay { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; padding: 16px; background: rgb(23 32 52 / .55); backdrop-filter: blur(4px); animation: coach-in .2s ease-out both; }
+.role-card { --role-accent: #3185fc; position: relative; width: min(440px, 100%); display: grid; justify-items: center; gap: 6px; padding: 30px 22px 22px; border: 3px solid var(--ink); border-radius: 24px; background: #fff; color: var(--ink); box-shadow: 10px 10px 0 var(--role-accent); text-align: center; animation: sign-pop .3s cubic-bezier(.2, .9, .25, 1.25) both; }
+.role-card[data-role="observer"] { --role-accent: #e8b61b; }
+.role-card[data-role="specialist"] { --role-accent: #ef5b84; }
+.role-card-count { position: absolute; top: -22px; right: -22px; width: 54px; height: 54px; display: grid; place-items: center; border: 3px solid var(--ink); border-radius: 50%; background: var(--yellow); font: 950 1.6rem/1 var(--font-mono); }
+.role-card-monkey { font-size: 4.6rem; line-height: 1; }
+.role-card > small { color: #5d6b82; font: 900 .72rem/1 var(--font-mono); letter-spacing: .18em; }
+.role-card h2 { margin: 0; font-size: clamp(2.4rem, 8vw, 3.4rem); line-height: 1; letter-spacing: -.02em; }
+.role-card > p { max-width: 340px; margin: 4px 0 14px; color: #33425b; font-size: 1rem; font-weight: 700; line-height: 1.35; }
+.role-card .role-senses { width: 100%; }
+
+/* MUTE's sign button at the bottom of the case feed. */
+.case-feed-sign { display: grid; gap: 7px; padding: 10px; border-top: 2px solid #d5e3ed; background: #fff0f5; }
+.case-feed-sign .mute-sign-button { width: 100%; min-height: 54px; display: inline-flex; align-items: center; justify-content: center; gap: 10px; border: 3px solid var(--ink); border-radius: 14px; background: var(--yellow); color: var(--ink); box-shadow: 4px 4px 0 var(--ink); font: 950 1rem/1 var(--font-mono); letter-spacing: .08em; animation: sign-button-glow 2.4s ease-in-out infinite; }
+.case-feed-sign .mute-sign-button:hover { background: #ffe680; color: var(--ink); }
+.case-feed-sign .mute-sign-button:active { transform: translate(2px, 2px); box-shadow: 2px 2px 0 var(--ink); }
+.case-feed-sign .mute-sign-button svg { width: 24px; height: 24px; }
+.case-feed-sign .mute-sign-button b { display: inline-grid; place-items: center; min-width: 30px; height: 30px; margin-left: 4px; padding: 0 6px; border: 2px solid var(--ink); border-radius: 8px; background: #fff; font-size: 1.15rem; }
+.case-feed-sign small { color: #6b5a74; font: 800 .66rem/1.3 var(--font-mono); text-align: center; }
+@keyframes sign-button-glow { 0%, 100% { box-shadow: 4px 4px 0 var(--ink), 0 0 0 0 rgb(239 91 132 / 0); } 50% { box-shadow: 4px 4px 0 var(--ink), 0 0 0 6px rgb(239 91 132 / .25); } }
+@media (prefers-reduced-motion: reduce) { .case-feed-sign .mute-sign-button { animation: none; } }
+.coach-badge i { margin-left: 4px; padding: 2px 5px; border-radius: 999px; background: var(--yellow); color: var(--ink); font-style: normal; font-size: .58rem; }
+/* Float the tip over the top of the first column (the suitcase lid or the
+   manual header) so it never takes height away from the controls. */
+@media (min-width: 781px) {
+  .game-workspace { position: relative; }
+  .game-workspace > .coach-strip { position: absolute; z-index: 25; grid-column: 1 / 2; grid-row: 1 / 2; top: 6px; left: 10px; right: 10px; margin: 0; pointer-events: none; }
+  .game-workspace > .coach-strip > article { pointer-events: auto; padding: 8px 10px; box-shadow: 3px 3px 0 var(--ink); }
+  .game-workspace > .coach-strip p { font-size: .86rem; }
+}

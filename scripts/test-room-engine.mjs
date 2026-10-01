@@ -122,6 +122,18 @@ function cutCorrectCable(engine, id = HOST) {
   ok(engine.handle(HOST, { action: "message", text: "  three cables  " }, now), "BLIND sends chat");
   rejected(engine.handle("uid-mute-2", { action: "message", text: "hi" }, now), /hand signals/, "MUTE cannot type");
   assert(engine.snapshotFor("uid-mute-2").room.game.messages.at(-1).text === "three cables", "chat is trimmed and delivered");
+
+  // Chats and game notices share one order; wrong answers reach BLIND as red errors.
+  now += 3_000;
+  const cable = engine.data.state.modules.cable;
+  const wrong = cable.colors.findIndex((color) => color !== CABLE_RULES[cable.count][cable.light]);
+  ok(engine.handle(HOST, { action: "module", moduleAction: "cut-cable", value: wrong }, now), "wrong cut");
+  ok(engine.handle(HOST, { action: "message", text: "oops" }, now), "chat after the mistake");
+  const blindGame = engine.snapshotFor(HOST).room.game;
+  const strike = blindGame.actionLog.at(-1);
+  const chatSeqs = blindGame.messages.map((message) => message.seq);
+  assert(strike.tone === "error" && chatSeqs[0] < strike.seq && strike.seq < chatSeqs[1], "feed order: chat, then the wrong answer, then the next chat");
+  for (const id of ["uid-deaf-2", "uid-mute-2"]) assert(engine.snapshotFor(id).room.game.actionLog.some((entry) => entry.tone === "error"), "wrong-answer alerts reach every role");
 }
 
 // --- Host handoff and takeover -------------------------------------------------
@@ -145,6 +157,12 @@ function cutCorrectCable(engine, id = HOST) {
   resumed.data.hostId = DEAF;
   resumed.setOnline([DEAF, MUTE]);
   assert(JSON.stringify(resumed.data.state) === JSON.stringify(engine.data.state), "saved state round-trips exactly");
+  // Rooms saved before this update stored the feed as plain strings.
+  const legacy = JSON.parse(saved);
+  legacy.state.actionLog = ["Level 1 armed.", "Wrong cable cut. Strike 1/3."];
+  delete legacy.state.feedSeq;
+  const upgraded = RoomEngine.restore(JSON.stringify(legacy)).data.state;
+  assert(upgraded.actionLog[0].text === "Level 1 armed." && upgraded.actionLog[1].tone === "error" && typeof upgraded.feedSeq === "number", "old saved rooms are upgraded");
   assert(resumed.snapshotFor(DEAF).room.isHost && !resumed.snapshotFor(HOST).room.isHost, "takeover moves host rights");
   ok(resumed.handle("uid-blind-2", { action: "join", name: "Ana", role: "operator" }, now), "the old host's seat can be reclaimed");
   now += 3_000;

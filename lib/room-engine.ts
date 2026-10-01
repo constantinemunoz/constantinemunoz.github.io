@@ -13,9 +13,13 @@ import {
   createGameState,
   createTutorialGameState,
   levelDefinition,
+  logAction,
   makeId,
+  nextFeedSeq,
   nextLevelAfterClear,
+  normalizeFeed,
   publicStateForRole,
+  resetLog,
   ROLE_META,
   ROLES,
   type GameState,
@@ -155,6 +159,7 @@ export class RoomEngine {
     if (!data || typeof data.code !== "string" || !data.state?.modules || !Array.isArray(data.seats)) {
       throw new Error("The saved room could not be read.");
     }
+    normalizeFeed(data.state);
     return new RoomEngine(data);
   }
 
@@ -198,7 +203,7 @@ export class RoomEngine {
     if (state.phase === "tutorial" && state.tutorial?.completedAt && now >= state.tutorial.completedAt + 4_000) {
       const next = createGameState(1, "playing", "new", state.chatEnabled, [], state.tutorialEnabled);
       next.startAt = now + 3_000;
-      next.actionLog = ["Tutorial complete. Level 1 armed with normal role restrictions."];
+      resetLog(next, "Tutorial complete. Level 1 armed with normal role restrictions.");
       this.data.state = next;
       this.resetReady();
       return true;
@@ -209,7 +214,7 @@ export class RoomEngine {
       state.lastResult = "timeout";
       state.startAt = null;
       state.messages = [];
-      state.actionLog.push(`Level ${state.level} timed out. Ready up to retry it.`);
+      logAction(state, `Level ${state.level} timed out. Ready up to retry it.`, "error");
       this.resetReady();
       return true;
     }
@@ -284,7 +289,7 @@ export class RoomEngine {
       .trim()
       .slice(0, 240);
     if (!text) return fail("Type a message first.");
-    state.messages.push({ id: makeId(), senderId: seat.id, senderRole: seat.role, senderName: seat.name, text, sentAt: now });
+    state.messages.push({ id: makeId(), senderId: seat.id, senderRole: seat.role, senderName: seat.name, text, sentAt: now, seq: nextFeedSeq(state) });
     state.messages = state.messages.slice(-40);
     return { ok: true };
   }
@@ -300,9 +305,9 @@ export class RoomEngine {
       ? createTutorialGameState(previous.chatEnabled)
       : createGameState(1, "waiting", "new", previous.chatEnabled, [], false);
     if (state.phase === "tutorial") state.startAt = now;
-    state.actionLog = previous.tutorialEnabled
-      ? ["Tutorial suitcase opened. Complete the information chain together."]
-      : ["Campaign staged. All three monkeys must ready up for Level 1."];
+    resetLog(state, previous.tutorialEnabled
+      ? "Tutorial suitcase opened. Complete the information chain together."
+      : "Campaign staged. All three monkeys must ready up for Level 1.");
     this.data.state = state;
     this.data.status = "playing";
     this.resetReady();
@@ -349,7 +354,7 @@ export class RoomEngine {
     const nextLevel = state.lastResult === "cleared" ? nextLevelAfterClear(state.level) : state.level;
     const next = createGameState(nextLevel, "playing", "new", state.chatEnabled, [], state.tutorialEnabled);
     next.startAt = now + 3_000;
-    next.actionLog = [`${levelDefinition(nextLevel).title}: Level ${nextLevel} armed.`];
+    resetLog(next, `${levelDefinition(nextLevel).title}: Level ${nextLevel} armed.`);
     this.data.state = next;
     this.resetReady();
     return { ok: true };
@@ -370,7 +375,8 @@ export class RoomEngine {
       state.lastResult = finished ? "cleared" : "strikes";
       state.startAt = null;
       state.messages = [];
-      state.actionLog.push(finished ? `Level ${state.level} clear. Ready up for the next level.` : `Three strikes. Ready up to retry Level ${state.level}.`);
+      if (finished) logAction(state, `Level ${state.level} clear. Ready up for the next level.`);
+      else logAction(state, `Three strikes. Ready up to retry Level ${state.level}.`, "error");
       this.resetReady();
     }
     return { ok: true };

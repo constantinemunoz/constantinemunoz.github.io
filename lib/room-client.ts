@@ -39,7 +39,8 @@ import { FIREBASE_CONFIG } from "./firebase-config.ts";
 import type { Role } from "./game.ts";
 import { cleanCode, cleanName, randomRoomCode, RoomEngine, SIGNAL_SYMBOLS, type EngineSnapshot, type RoomRequest } from "./room-engine.ts";
 
-export type LiveCursor = { x: number; y: number; active: boolean; at: number };
+export type LiveCursor = { x: number; y: number; active: boolean; at: number; anchor?: string; ax?: number; ay?: number };
+export type CursorReport = { x: number; y: number; active: boolean; anchor?: string; ax?: number; ay?: number };
 export type LiveSignal = { symbol: string; at: number };
 export type LiveFeed = { cursor: LiveCursor | null; signal: LiveSignal | null };
 
@@ -464,9 +465,16 @@ export class RoomConnection {
     };
   }
 
-  sendCursor(x: number, y: number, active: boolean) {
+  sendCursor(point: CursorReport) {
     const { db } = firebase();
-    return set(ref(db, roomPath(this.code, "cursor")), { x, y, active, at: serverNow() });
+    const value: LiveCursor = { x: point.x, y: point.y, active: point.active, at: serverNow() };
+    // Firebase rejects undefined fields, so only include the anchor when there is one.
+    if (point.anchor && typeof point.ax === "number" && typeof point.ay === "number") {
+      value.anchor = point.anchor.slice(0, 40);
+      value.ax = point.ax;
+      value.ay = point.ay;
+    }
+    return set(ref(db, roomPath(this.code, "cursor")), value);
   }
 
   sendSignal(symbol: string) {
@@ -588,8 +596,8 @@ export function roomRequest(payload: RoomRequest) {
   return current.request(payload);
 }
 
-export function sendCursor(x: number, y: number, active: boolean) {
-  current?.sendCursor(x, y, active).catch(() => undefined);
+export function sendCursor(point: CursorReport) {
+  current?.sendCursor(point).catch(() => undefined);
 }
 
 export function sendSignal(symbol: string) {

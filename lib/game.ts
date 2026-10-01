@@ -47,7 +47,12 @@ export type ChatMessage = {
   senderName: string;
   text: string;
   sentAt: number;
+  // Position in the case feed, shared with action log entries so chats and
+  // game notices appear in the order they happened.
+  seq?: number;
 };
+
+export type ActionLogEntry = { text: string; seq: number; tone?: "error" };
 
 export type LevelDefinition = {
   level: number;
@@ -143,7 +148,8 @@ export type GameState = {
   durationMs: number;
   mistakes: number;
   maxMistakes: number;
-  actionLog: string[];
+  actionLog: ActionLogEntry[];
+  feedSeq: number;
   chatEnabled: boolean;
   tutorialEnabled: boolean;
   tutorial: TutorialState | null;
@@ -315,8 +321,35 @@ export function resolveLevelModules(definition: LevelDefinition) {
   return [...fixed, ...shuffled(candidates).slice(0, definition.randomCount ?? 0)];
 }
 
+export function nextFeedSeq(state: GameState) {
+  state.feedSeq = (state.feedSeq ?? 0) + 1;
+  return state.feedSeq;
+}
+
+export function logAction(state: GameState, text: string, tone?: "error") {
+  state.actionLog.push(tone ? { text, seq: nextFeedSeq(state), tone } : { text, seq: nextFeedSeq(state) });
+}
+
+// Starts a fresh case feed with a single notice.
+export function resetLog(state: GameState, text: string) {
+  state.actionLog = [];
+  logAction(state, text);
+}
+
+const LEGACY_ERROR = /wrong|rejected|incorrect|strike|timed out|time expired/i;
+
+// Rooms saved before the feed had sequence numbers stored plain strings.
+export function normalizeFeed(state: GameState) {
+  const log = (state.actionLog ?? []) as Array<ActionLogEntry | string>;
+  state.actionLog = log.map((entry) => (typeof entry === "string" ? (LEGACY_ERROR.test(entry) ? { text: entry, seq: 0, tone: "error" as const } : { text: entry, seq: 0 }) : entry));
+  state.feedSeq = Math.max(state.feedSeq ?? 0, ...state.actionLog.map((entry) => entry.seq), ...(state.messages ?? []).map((message) => message.seq ?? 0));
+  return state;
+}
+
 export function createGameState(level = 1, phase: RoundPhase = "waiting", lastResult: RoundResult = "new", chatEnabled = false, messages: ChatMessage[] = [], tutorialEnabled = false): GameState {
   const definition = levelDefinition(level);
+  const keptMessages = [...messages].slice(-40);
+  const startSeq = Math.max(0, ...keptMessages.map((message) => message.seq ?? 0)) + 1;
   return {
     serial: `BN-${Math.floor(10000 + Math.random() * 90000)}`,
     level: definition.level,
@@ -326,11 +359,12 @@ export function createGameState(level = 1, phase: RoundPhase = "waiting", lastRe
     durationMs: definition.durationMs,
     mistakes: 0,
     maxMistakes: 3,
-    actionLog: [phase === "waiting" ? `Level ${definition.level} staged. Waiting for all three monkeys.` : `Level ${definition.level} armed.`],
+    actionLog: [{ text: phase === "waiting" ? `Level ${definition.level} staged. Waiting for all three monkeys.` : `Level ${definition.level} armed.`, seq: startSeq }],
+    feedSeq: startSeq,
     chatEnabled,
     tutorialEnabled,
     tutorial: null,
-    messages: [...messages].slice(-40),
+    messages: keptMessages,
     activeModuleKeys: resolveLevelModules(definition),
     modules: {
       cable: createCableModule(),
@@ -356,7 +390,7 @@ export function createTutorialGameState(chatEnabled = false): GameState {
     cut: null,
     solved: false,
   };
-  state.actionLog = ["Training suitcase opened. Follow the shared information chain."];
+  resetLog(state, "Training suitcase opened. Follow the shared information chain.");
   state.tutorial = {
     step: 0,
     practiceMistakes: 0,
@@ -399,7 +433,7 @@ export function applyTutorialAction(state: GameState, role: Role, action: Tutori
   if (action === "practice-error") {
     if (Number(value) !== 1) return { ok: false, error: "Try the highlighted practice-error cable." };
     tutorial.practiceMistakes = 1;
-    tutorial.feed.push(tutorialEntry("error", "Practice error: wrong cable. In a normal round, BLIND receives the strike.", "operator"));
+    tutorial.feed.push(tutorialEntry("error", "Practice error: wrong cable. In a normal round, the team gets a strike and everyone sees this alert.", "operator"));
   }
   if (action === "solve-cable") {
     if (Number(value) !== 0) return { ok: false, error: "Use the answer MUTE sent." };
@@ -425,10 +459,6 @@ export function completedModules(state: GameState) {
   return activeModules(state).filter((module) => state.modules[module].solved).length;
 }
 
-function isBlindOnlyCaseError(entry: string) {
-  return /wrong|rejected|incorrect|strike|timed out|time expired/i.test(entry);
-}
-
 export function publicStateForRole(state: GameState, role: Role, playerId = "") {
   const definition = levelDefinition(state.level);
   const enabledModules = activeModules(state);
@@ -440,6 +470,7 @@ export function publicStateForRole(state: GameState, role: Role, playerId = "") 
           senderName: message.senderName,
           text: message.text,
           sentAt: message.sentAt,
+          seq: message.seq ?? 0,
         }))
     : [];
   const common = {
@@ -453,7 +484,8 @@ export function publicStateForRole(state: GameState, role: Role, playerId = "") 
     durationMs: state.durationMs,
     mistakes: state.mistakes,
     maxMistakes: state.maxMistakes,
-    actionLog: (role === "operator" ? state.actionLog : state.actionLog.filter((entry) => !isBlindOnlyCaseError(entry))).slice(-8),
+    // Every role sees the full feed, including the red wrong-answer alerts.
+    actionLog: state.actionLog.slice(-8),
     completed: completedModules(state),
     moduleCount: enabledModules.length,
     chatEnabled: state.chatEnabled,
@@ -523,7 +555,7 @@ export function publicStateForRole(state: GameState, role: Role, playerId = "") 
 
 function strike(state: GameState, note: string) {
   state.mistakes += 1;
-  state.actionLog.push(`${note} Strike ${state.mistakes}/${state.maxMistakes}.`);
+  logAction(state, `${note} Strike ${state.mistakes}/${state.maxMistakes}.`, "error");
 }
 
 export type ModuleAction = "cut-cable" | "toggle-slider" | "check-slider" | "press-direction" | "calculator-key" | "calculator-clear" | "calculator-enter" | "piano-key";
@@ -538,7 +570,7 @@ export function applyModuleAction(state: GameState, action: ModuleAction, value?
       if (cable.colors[index] === cable.targetColor) {
         cable.cut = index;
         cable.solved = true;
-        state.actionLog.push("Cable severed. Circuit stable.");
+        logAction(state, "Cable severed. Circuit stable.");
       } else strike(state, "Wrong cable cut.");
     }
   }
@@ -547,7 +579,7 @@ export function applyModuleAction(state: GameState, action: ModuleAction, value?
     const index = Number(value);
     if (!state.modules.slider.solved && Number.isInteger(index) && index >= 0 && index < 4) {
       state.modules.slider.current[index] = !state.modules.slider.current[index];
-      state.actionLog.push(`Slider position ${index + 1} moved.`);
+      logAction(state, `Slider position ${index + 1} moved.`);
     }
   }
 
@@ -555,7 +587,7 @@ export function applyModuleAction(state: GameState, action: ModuleAction, value?
     const correct = state.modules.slider.current.every((position, index) => position === state.modules.slider.target[index]);
     if (correct) {
       state.modules.slider.solved = true;
-      state.actionLog.push("Color slider pattern accepted.");
+      logAction(state, "Color slider pattern accepted.");
     } else strike(state, "Color slider pattern rejected.");
   }
 
@@ -566,7 +598,7 @@ export function applyModuleAction(state: GameState, action: ModuleAction, value?
       directionModule.pressed = direction;
       if (direction === directionModule.target) {
         directionModule.solved = true;
-        state.actionLog.push("Direction accepted.");
+        logAction(state, "Direction accepted.");
       } else {
         strike(state, "Wrong direction. Direction module reset.");
         state.modules.direction = createDirectionModule();
@@ -584,7 +616,7 @@ export function applyModuleAction(state: GameState, action: ModuleAction, value?
         } else if (digit === calculator.targetDigit) {
           calculator.pressed = digit;
           calculator.solved = true;
-          state.actionLog.push("Calculator confirmation accepted.");
+          logAction(state, "Calculator confirmation accepted.");
         } else strike(state, "Wrong calculator confirmation key.");
       }
     }
@@ -592,7 +624,7 @@ export function applyModuleAction(state: GameState, action: ModuleAction, value?
     if (action === "calculator-enter" && calculator.stage === "entry") {
       if (Number(calculator.entered) === calculator.answer) {
         calculator.stage = "confirm";
-        state.actionLog.push("Equation accepted. Read the new light and confirm one final key.");
+        logAction(state, "Equation accepted. Read the new light and confirm one final key.");
       } else {
         strike(state, "Incorrect equation result.");
         calculator.entered = "";
@@ -609,9 +641,9 @@ export function applyModuleAction(state: GameState, action: ModuleAction, value?
         piano.pressed.push(key);
         if (piano.pressed.length === piano.target.length) {
           piano.solved = true;
-          state.actionLog.push("Piano melody accepted.");
+          logAction(state, "Piano melody accepted.");
         } else {
-          state.actionLog.push(`Piano note ${piano.pressed.length}/${piano.target.length} accepted.`);
+          logAction(state, `Piano note ${piano.pressed.length}/${piano.target.length} accepted.`);
         }
       } else {
         strike(state, "Wrong piano key. Melody reset.");

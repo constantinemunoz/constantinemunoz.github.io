@@ -137,14 +137,21 @@ const visibilityState = createGameState(1, "playing", "new", true, [
   { id: "blind-message", senderId: "blind-id", senderRole: "operator", senderName: "Blind", text: "three cables", sentAt: 1 },
   { id: "deaf-message", senderId: "deaf-id", senderRole: "observer", senderName: "Deaf", text: "red light", sentAt: 2 },
 ]);
-visibilityState.actionLog = ["Cable severed. Circuit stable.", "Wrong cable cut. Strike 1/3."];
+visibilityState.actionLog = [{ text: "Cable severed. Circuit stable.", seq: 3 }, { text: "Wrong cable cut. Strike 1/3.", seq: 4, tone: "error" }];
 const blindView = publicStateForRole(visibilityState, "operator", "blind-id");
 const deafView = publicStateForRole(visibilityState, "observer", "deaf-id");
 const muteView = publicStateForRole(visibilityState, "specialist", "mute-id");
-assert(blindView.actionLog.length === 2, "BLIND must receive case-feed errors");
-assert(deafView.actionLog.length === 1 && muteView.actionLog.length === 1, "Case-feed errors leaked beyond BLIND");
+assert(blindView.actionLog.length === 2, "BLIND must receive the full case feed");
+assert(deafView.actionLog.length === 2 && muteView.actionLog.length === 2 && deafView.actionLog[1].tone === "error", "Every role must receive the wrong-answer alerts");
 assert(deafView.messages.length === 1 && deafView.messages[0].senderId === undefined && deafView.messages[0].text === "red light", "DEAF chat visibility is wrong");
 assert(blindView.messages.length === 2 && muteView.messages.length === 2, "BLIND and MUTE should receive the full text chat");
+
+const feedState = createGameState(1, "playing");
+const wrongIndex = feedState.modules.cable.colors.findIndex((color) => color !== feedState.modules.cable.targetColor);
+applyModuleAction(feedState, "cut-cable", wrongIndex);
+const strikeEntry = feedState.actionLog.at(-1);
+assert(strikeEntry.tone === "error" && /Strike 1\/3/.test(strikeEntry.text), "Wrong answers are marked as errors");
+assert(feedState.actionLog.every((entry, index, log) => index === 0 || entry.seq > log[index - 1].seq), "Case feed entries are numbered in order");
 
 const pianoVisibilityState = createGameState(9, "playing");
 const pianoBlindView = publicStateForRole(pianoVisibilityState, "operator", "blind-id");
