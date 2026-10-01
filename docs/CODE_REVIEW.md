@@ -3,6 +3,44 @@
 Review of the source that was imported into this repository on 2026-10-01. Everything in
 `lib/`, `app/`, `db/`, `drizzle/`, `scripts/` and the build configuration was read in full.
 
+## Status after the move to Firebase
+
+The Cloudflare server route (`app/api/room/route.ts`) and its D1 database were replaced by
+a room referee that runs in the host's browser (`lib/room-engine.ts`) and Firebase Realtime
+Database (`lib/room-client.ts`, `database.rules.json`). The findings below are the original
+review of the imported code; this table records where each one stands now.
+
+| Finding | Status |
+| --- | --- |
+| H1 cannot rejoin a started room | Fixed. An offline seat can be reclaimed with the room code, in the lobby or mid-game. |
+| H2 session dropped on any error | Fixed. The saved room is only forgotten when the seat is really gone. |
+| H3 stale host seat orphans the room | Fixed. A leaving host hands the room on; a vanished host is replaced after a few seconds. |
+| M1 timer garbage on first frame | Fixed. Timers also use Firebase's shared server clock. |
+| M2 stale poll overwrites fresher data | Gone. Polling was replaced by ordered live updates. |
+| M3 unguarded `crypto.randomUUID` | Fixed with a fallback in `lib/game.ts`. |
+| M4 start/rematch not guarded | Fixed. Start only works from the lobby; the unused rematch action was removed. |
+| M5 rooms never deleted | Fixed. Rooms idle for 24 hours are deleted when someone creates a room. |
+| M6 concurrent joins return 500 | Gone. The host applies requests one at a time. |
+| M7 invalid JSON is a 500 | Gone. Malformed requests get a clear rejection. |
+| M8 polling load | Gone. Updates are pushed; nothing polls. |
+| M9 no way to leave a room | Fixed. Leave buttons in the lobby and the game header. |
+| L2 clipboard error unhandled | Fixed. |
+| L7, L9, L11 | Gone with the server code, the D1 example and `.openai/hosting.json`. |
+| L1, L3, L4, L5, L6, L8, L10, L12 | Still open. They are minor and unchanged. |
+
+New trade-off: the host's browser holds the full game state, so a host who opens the
+browser's developer tools could see the answers. The database rules keep the other two
+players' views private, and only a seated player can take over as host.
+
+Verification of the new setup, all against local Firebase emulators running the real rules:
+
+| Check | Result |
+| --- | --- |
+| `pnpm run test` (22,000 game rounds + 110 room referee checks) | pass |
+| Security rules: 37 allowed and forbidden reads and writes across four users | pass |
+| Three browsers: create, join, ready, timer, solve Level 1, cursor and sign relay, reload, rejoin a closed seat, host closes tab and another player takes over, play Level 2, leave | pass, no console errors |
+| Three browsers: interactive tutorial with role-locked steps, automatic start of Level 1, text chat privacy for DEAF, MUTE cannot type | pass, no console errors |
+
 ## What was verified
 
 | Check | Result |

@@ -1,0 +1,80 @@
+{
+  "rules": {
+    "roomIndex": {
+      ".read": "auth != null",
+      ".indexOn": [".value"],
+      "$code": {
+        ".write": "auth != null && (root.child('rooms').child($code).child('meta/hostUid').val() === auth.uid || (!newData.exists() && data.exists() && data.val() < now - 86400000))",
+        ".validate": "newData.isNumber()"
+      }
+    },
+    "rooms": {
+      "$code": {
+        ".write": "auth != null && !newData.exists() && (data.child('meta/hostUid').val() === auth.uid || root.child('roomIndex').child($code).val() < now - 86400000)",
+        ".validate": "$code.matches(/^[A-Z0-9]{5}$/)",
+        "meta": {
+          ".read": "auth != null",
+          ".write": "auth != null && ((!data.exists() && newData.child('hostUid').val() === auth.uid) || (data.exists() && data.child('hostUid').val() === auth.uid))",
+          ".validate": "newData.hasChildren(['hostUid', 'createdAt', 'status'])",
+          "hostUid": {
+            ".write": "auth != null && data.exists() && newData.val() === auth.uid && !root.child('rooms').child($code).child('presence').child(data.val()).exists() && (root.child('rooms').child($code).child('roles/operator').val() === auth.uid || root.child('rooms').child($code).child('roles/observer').val() === auth.uid || root.child('rooms').child($code).child('roles/specialist').val() === auth.uid)",
+            ".validate": "newData.isString()"
+          },
+          "createdAt": { ".validate": "newData.isNumber()" },
+          "status": { ".validate": "newData.val() === 'lobby' || newData.val() === 'playing'" },
+          "$other": { ".validate": false }
+        },
+        "engine": {
+          ".read": "auth != null && root.child('rooms').child($code).child('meta/hostUid').val() === auth.uid",
+          ".write": "auth != null && root.child('rooms').child($code).child('meta/hostUid').val() === auth.uid",
+          ".validate": "newData.isString() && newData.val().length < 200000"
+        },
+        "roles": {
+          ".read": "auth != null",
+          ".write": "auth != null && root.child('rooms').child($code).child('meta/hostUid').val() === auth.uid",
+          "$role": {
+            ".validate": "($role === 'operator' || $role === 'observer' || $role === 'specialist') && newData.isString()"
+          }
+        },
+        "views": {
+          "$uid": {
+            ".read": "auth != null && auth.uid === $uid",
+            ".write": "auth != null && root.child('rooms').child($code).child('meta/hostUid').val() === auth.uid",
+            ".validate": "newData.isString() && newData.val().length < 100000"
+          }
+        },
+        "inbox": {
+          ".read": "auth != null && root.child('rooms').child($code).child('meta/hostUid').val() === auth.uid",
+          "$request": {
+            ".write": "auth != null && ((!data.exists() && newData.child('uid').val() === auth.uid && root.child('rooms').child($code).child('meta').exists()) || (!newData.exists() && (data.child('uid').val() === auth.uid || root.child('rooms').child($code).child('meta/hostUid').val() === auth.uid)))",
+            ".validate": "newData.hasChildren(['uid', 'payload', 'at']) && newData.child('payload').isString() && newData.child('payload').val().length <= 2000 && newData.child('at').isNumber()"
+          }
+        },
+        "outbox": {
+          "$uid": {
+            ".read": "auth != null && auth.uid === $uid",
+            ".write": "auth != null && (root.child('rooms').child($code).child('meta/hostUid').val() === auth.uid || (auth.uid === $uid && !newData.exists()))"
+          }
+        },
+        "presence": {
+          ".read": "auth != null",
+          "$uid": {
+            ".write": "auth != null && auth.uid === $uid",
+            "$connection": { ".validate": "newData.isBoolean()" }
+          }
+        },
+        "cursor": {
+          ".read": "auth != null",
+          ".write": "auth != null && (root.child('rooms').child($code).child('roles/operator').val() === auth.uid || root.child('rooms').child($code).child('meta/hostUid').val() === auth.uid)",
+          ".validate": "newData.hasChildren(['x', 'y', 'active', 'at']) && newData.child('x').isNumber() && newData.child('y').isNumber() && newData.child('active').isBoolean() && newData.child('at').isNumber()"
+        },
+        "signal": {
+          ".read": "auth != null",
+          ".write": "auth != null && (root.child('rooms').child($code).child('roles/specialist').val() === auth.uid || root.child('rooms').child($code).child('meta/hostUid').val() === auth.uid)",
+          ".validate": "newData.hasChildren(['symbol', 'at']) && newData.child('symbol').isString() && newData.child('symbol').val().length <= 8 && newData.child('at').isNumber()"
+        },
+        "$other": { ".validate": false }
+      }
+    }
+  }
+}

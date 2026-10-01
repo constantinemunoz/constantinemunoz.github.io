@@ -23,18 +23,7 @@ if (-not (Get-Command pnpm -ErrorAction SilentlyContinue)) {
 Write-Host "Installing BOMBANANA packages..."
 pnpm install --frozen-lockfile
 
-if (-not (Test-Path ".bombanana-local-ready")) {
-  Write-Host "Building BOMBANANA..."
-  pnpm run build
-
-  Write-Host "Creating the local multiplayer database..."
-  Get-ChildItem "drizzle/*.sql" | Sort-Object Name | ForEach-Object {
-    node --import ./scripts/sites-env.mjs ./node_modules/wrangler/bin/wrangler.js d1 execute DB --local --config dist/server/wrangler.json --persist-to .wrangler/state --file $_.FullName
-  }
-  New-Item ".bombanana-local-ready" -ItemType File -Force | Out-Null
-}
-
-Write-Host "Starting BOMBANANA..."
-Write-Host "Keep this window open while you play. Press Control+C to stop the game."
+Write-Host "Starting BOMBANANA at http://localhost:3000"
+Write-Host "Multiplayer rooms use the same Firebase database as the live site."
+Write-Host "Keep this window open while you play. Press Control+C to stop."
 pnpm run dev
-

@@ -21,6 +21,7 @@ import {
   Eye,
   Hand,
   Hash,
+  LogOut,
   MessageCircle,
   MousePointer2,
   Piano,
@@ -78,6 +79,19 @@ import {
   type TutorialAction,
   type TutorialFeedEntry,
 } from "@/lib/game";
+import {
+  createRoom,
+  describeError,
+  joinRoom,
+  leaveRoom,
+  resumeRoom,
+  roomRequest,
+  sendCursor,
+  sendSignal,
+  serverNow,
+  type LiveFeed,
+  type RoomConnection,
+} from "@/lib/room-client";
 
 type Player = { name: string; role: Role; online: boolean; ready: boolean };
 type CableView = { count: number; colors?: LightColor[]; light?: LightColor; cut?: number | null; solved: boolean };
@@ -127,7 +141,6 @@ type RoomSnapshot = {
   };
   player: { id: string; name: string; role: Role };
 };
-type Session = { code: string; playerId: string };
 type CursorPoint = { x: number; y: number; active: boolean };
 type MuteSignal = { symbol: string; updatedAt: number; active: boolean };
 
@@ -159,25 +172,29 @@ const BRAILLE: Record<number, number[]> = {
   9: [2, 4],
 };
 
-// A plain file host such as GitHub Pages has no /api/room and answers with an
-// HTML error page instead of JSON. Detect that at runtime so the static build
-// explains itself rather than failing on JSON.parse.
-const NO_SERVER_MESSAGE = "The room server is not available on this site, so multiplayer rooms cannot open here. Solo developer mode still works; see the README to host three-player rooms.";
+const SESSION_KEY = "bombanana-session";
 
-function isRoomServiceResponse(response: Response) {
-  return (response.headers.get("content-type") ?? "").includes("application/json");
+// Sends a request to the room host (see lib/room-client.ts) and resolves with
+// this player's updated view of the room.
+async function requestRoom(payload: Record<string, unknown>) {
+  return (await roomRequest(payload)) as unknown as RoomSnapshot;
 }
 
-async function requestRoom<T = RoomSnapshot>(payload: Record<string, unknown>) {
-  const response = await fetch("/api/room", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-  if (!isRoomServiceResponse(response)) throw new Error(NO_SERVER_MESSAGE);
-  const data = (await response.json()) as T & { error?: string };
-  if (!response.ok) throw new Error(data.error || "Room request failed.");
-  return data;
+// Adds the Blind cursor and the Mute sign, which travel outside the room views
+// because they change many times a second.
+function withLiveFeed(data: RoomSnapshot, live: LiveFeed, now: number): RoomSnapshot {
+  const { cursor, signal } = live;
+  return {
+    ...data,
+    room: {
+      ...data.room,
+      game: {
+        ...data.room.game,
+        operatorCursor: cursor ? { x: cursor.x, y: cursor.y, active: now > 0 && cursor.active && now - cursor.at < 2_000 } : { x: 0.5, y: 0.5, active: false },
+        muteSignal: signal ? { symbol: signal.symbol, updatedAt: signal.at, active: now > 0 && Boolean(signal.symbol) && now - signal.at < 6_000 } : { symbol: "", updatedAt: 0, active: false },
+      },
+    },
+  };
 }
 
 function formatTime(ms: number) {
@@ -223,7 +240,7 @@ function TutorialButton({ className = "", label = "How to play" }: { className?:
   return <Dialog onOpenChange={(open) => { if (!open) setPage(0); }}><DialogTrigger asChild><Button type="button" variant="outline" className={className}><CircleHelp />{label}</Button></DialogTrigger><DialogContent className="tutorial-dialog" showCloseButton={false}><div className="tutorial-topline"><div><DialogTitle>BOMBANANA FIELD GUIDE</DialogTitle><DialogDescription>{TUTORIAL_PAGES[page]} · PAGE {page + 1} OF {TUTORIAL_PAGES.length}</DialogDescription></div><DialogClose asChild><button type="button" aria-label="Close tutorial"><X /></button></DialogClose></div><TutorialSpread page={page} /><footer className="tutorial-footer"><button type="button" onClick={() => setPage((current) => Math.max(0, current - 1))} disabled={page === 0}><ChevronLeft /> BACK</button><div aria-label={`Tutorial page ${page + 1} of ${TUTORIAL_PAGES.length}`}>{TUTORIAL_PAGES.map((title, index) => <button type="button" key={title} onClick={() => setPage(index)} data-active={index === page} aria-label={`Open ${title.toLowerCase()} page`} />)}</div>{page < TUTORIAL_PAGES.length - 1 ? <button type="button" onClick={() => setPage((current) => Math.min(TUTORIAL_PAGES.length - 1, current + 1))}>NEXT <ChevronRight /></button> : <DialogClose asChild><button type="button">DONE <Check /></button></DialogClose>}</footer></DialogContent></Dialog>;
 }
 
-function StartScreen({ onEnter, onTest }: { onEnter: (data: RoomSnapshot) => void; onTest: () => void }) {
+function StartScreen({ onEnter, onTest, notice }: { onEnter: (connection: RoomConnection, data: RoomSnapshot) => void; onTest: () => void; notice?: string }) {
   const [mode, setMode] = useState("create");
   const [name, setName] = useState("");
   const [code, setCode] = useState("");
@@ -232,15 +249,6 @@ function StartScreen({ onEnter, onTest }: { onEnter: (data: RoomSnapshot) => voi
   const [tutorialEnabled, setTutorialEnabled] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [serverAvailable, setServerAvailable] = useState(true);
-
-  useEffect(() => {
-    let active = true;
-    fetch("/api/room?code=PROBE&playerId=probe", { cache: "no-store" })
-      .then((response) => { if (active) setServerAvailable(isRoomServiceResponse(response)); })
-      .catch(() => undefined);
-    return () => { active = false; };
-  }, []);
 
   async function submit() {
     setError("");
@@ -248,12 +256,12 @@ function StartScreen({ onEnter, onTest }: { onEnter: (data: RoomSnapshot) => voi
     if (mode === "join" && code.replace(/\W/g, "").length !== 5) return setError("Enter the five-character room code.");
     setBusy(true);
     try {
-      const playerId = typeof crypto.randomUUID === "function"
-        ? crypto.randomUUID()
-        : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
-      const data = await requestRoom<RoomSnapshot>({ action: mode, name, role, playerId, ...(mode === "join" ? { code } : { chatEnabled, tutorialEnabled }) });
-      sessionStorage.setItem("bombanana-session", JSON.stringify({ code: data.room.code, playerId }));
-      onEnter(data);
+      const entered = mode === "join"
+        ? await joinRoom({ code, name, role })
+        : await createRoom({ name, role, chatEnabled, tutorialEnabled });
+      const data = entered.snapshot as unknown as RoomSnapshot;
+      try { sessionStorage.setItem(SESSION_KEY, JSON.stringify({ code: data.room.code })); } catch { /* Private windows may block storage; the game still works. */ }
+      onEnter(entered.connection, data);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not enter the room.");
     } finally {
@@ -280,7 +288,7 @@ function StartScreen({ onEnter, onTest }: { onEnter: (data: RoomSnapshot) => voi
           </div>
         </div>
         <div className="entry-card">
-          {!serverAvailable && <p className="static-notice" role="note"><b>STATIC PREVIEW · NO ROOM SERVER</b>This copy is served as plain files, so Create and Join cannot open three-player rooms. Use developer mode below to play every level solo, or run the project locally for multiplayer.</p>}
+          {notice && <p className="room-notice" role="status">{notice}</p>}
           <Tabs value={mode} onValueChange={setMode}>
             <TabsList className="entry-tabs"><TabsTrigger value="create">Create room</TabsTrigger><TabsTrigger value="join">Join room</TabsTrigger></TabsList>
             <TabsContent value="create" className="entry-content"><p>You’ll receive a room code for the other two players.</p></TabsContent>
@@ -312,7 +320,7 @@ function RoleChip({ player }: { player?: Player }) {
   return <div className="seat-card"><span className="seat-monkey">{meta.monkey}</span><div><small>{meta.short}</small><b>{player.name}</b></div><span className={player.online ? "presence online" : "presence"} /></div>;
 }
 
-function Lobby({ data, onData, onTest }: { data: RoomSnapshot; onData: (data: RoomSnapshot) => void; onTest: () => void }) {
+function Lobby({ data, onData, onTest, onLeave, banner }: { data: RoomSnapshot; onData: (data: RoomSnapshot) => void; onTest: () => void; onLeave: () => void; banner?: string }) {
   const [copied, setCopied] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -320,13 +328,15 @@ function Lobby({ data, onData, onTest }: { data: RoomSnapshot; onData: (data: Ro
   const full = data.room.players.length === 3;
 
   async function copyCode() {
-    await navigator.clipboard.writeText(data.room.code);
-    setCopied(true);
-    window.setTimeout(() => setCopied(false), 1400);
+    try {
+      await navigator.clipboard.writeText(data.room.code);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1400);
+    } catch { /* Clipboard access can be denied; the code stays visible. */ }
   }
   async function start() {
     setBusy(true);
-    try { onData(await requestRoom({ action: "start", code: data.room.code, playerId: data.player.id })); }
+    try { onData(await requestRoom({ action: "start" })); }
     catch (cause) { setError(cause instanceof Error ? cause.message : "Could not start the campaign."); }
     finally { setBusy(false); }
   }
@@ -336,10 +346,12 @@ function Lobby({ data, onData, onTest }: { data: RoomSnapshot; onData: (data: Ro
       <div className="room-code-block"><small>ROOM CODE</small><button onClick={copyCode}>{data.room.code} {copied ? <Check /> : <Copy />}</button></div>
       <div className="seat-grid">{slots.map((player, index) => <RoleChip player={player} key={ROLES[index]} />)}</div>
       <div className="lobby-option-grid"><div className="lobby-chat-status" data-enabled={data.room.game.chatEnabled}><MessageCircle /><b>TEXT CHAT {data.room.game.chatEnabled ? "ON" : "OFF"}</b><span>{data.room.game.chatEnabled ? "BLIND + DEAF can type" : "No typed messages this run"}</span></div><div className="lobby-chat-status tutorial-lobby-status" data-enabled={data.room.game.tutorialEnabled}><CircleHelp /><b>TUTORIAL {data.room.game.tutorialEnabled ? "ON" : "OFF"}</b><span>{data.room.game.tutorialEnabled ? "Before Level 1" : "Start normally"}</span></div></div>
+      {banner && <p className="room-notice" role="status">{banner}</p>}
       {error && <p className="form-error" role="alert">{error}</p>}
       {data.room.isHost ? <Button className="launch-button" disabled={!full || busy} onClick={start}><Play /> {busy ? "Staging…" : full ? data.room.game.tutorialEnabled ? "Start interactive tutorial" : "Open Level 1 ready room" : `Waiting for ${3 - data.room.players.length}`}</Button> : <div className="waiting-bar"><span /> Host opens the campaign when every role is filled.</div>}
       <TutorialButton className="tutorial-lobby-button" label="How to play" />
       <Button onClick={onTest} variant="outline" className="test-entry-button lobby-test-button"><Wrench /> Test all levels alone</Button>
+      <Button onClick={onLeave} variant="outline" className="test-entry-button lobby-leave-button"><LogOut /> Leave room</Button>
     </div></main>
   );
 }
@@ -722,7 +734,7 @@ type DeveloperControls = {
   solution: string[];
 };
 
-function Game({ data, onData, developer }: { data: RoomSnapshot; onData: (data: RoomSnapshot) => void; developer?: DeveloperControls }) {
+function Game({ data, onData, developer, onLeave, banner }: { data: RoomSnapshot; onData: (data: RoomSnapshot) => void; developer?: DeveloperControls; onLeave?: () => void; banner?: string }) {
   const game = data.room.game;
   const role = data.player.role;
   const meta = ROLE_META[role];
@@ -732,27 +744,33 @@ function Game({ data, onData, developer }: { data: RoomSnapshot; onData: (data: 
   const [error, setError] = useState("");
   const cursorRef = useRef<CursorPoint>({ x: 0.5, y: 0.5, active: false });
   const cursorLastSent = useRef(0);
-  const remaining = game.startAt ? game.startAt + game.durationMs - now : game.durationMs;
-  const prestart = game.startAt ? Math.max(0, Math.ceil((game.startAt - now) / 1000)) : 0;
+  const clockReady = now > 0;
+  const remaining = game.startAt && clockReady ? game.startAt + game.durationMs - now : game.durationMs;
+  const prestart = game.startAt && clockReady ? Math.max(0, Math.ceil((game.startAt - now) / 1000)) : 0;
   const timePercent = Math.max(0, Math.min(100, (remaining / game.durationMs) * 100));
 
-  useEffect(() => { const timer = window.setInterval(() => setNow(Date.now()), 200); return () => window.clearInterval(timer); }, []);
+  useEffect(() => {
+    const tick = () => setNow(serverNow());
+    const first = window.setTimeout(tick, 0);
+    const timer = window.setInterval(tick, 200);
+    return () => { window.clearTimeout(first); window.clearInterval(timer); };
+  }, []);
 
   const act = useCallback(async (moduleAction: ModuleAction, value?: number | string) => {
     if (developer) return developer.onAction(moduleAction, value);
     setBusy(true); setError("");
-    try { onData(await requestRoom({ action: "module", code: data.room.code, playerId: data.player.id, moduleAction, value })); }
+    try { onData(await requestRoom({ action: "module", moduleAction, value })); }
     catch (cause) { setError(cause instanceof Error ? cause.message : "Control did not respond."); }
     finally { setBusy(false); }
-  }, [data, developer, onData]);
+  }, [developer, onData]);
 
   const tutorialAct = useCallback(async (tutorialAction: TutorialAction, value?: number | string) => {
     if (developer) return developer.onTutorialAction(tutorialAction, value);
     setBusy(true); setError("");
-    try { onData(await requestRoom({ action: "tutorial-action", code: data.room.code, playerId: data.player.id, tutorialAction, value })); }
+    try { onData(await requestRoom({ action: "tutorial-action", tutorialAction, value })); }
     catch (cause) { setError(cause instanceof Error ? cause.message : "Tutorial action did not respond."); }
     finally { setBusy(false); }
-  }, [data, developer, onData]);
+  }, [developer, onData]);
 
   const reportCursor = useCallback((x: number, y: number, active: boolean) => {
     cursorRef.current = { x, y, active };
@@ -760,32 +778,32 @@ function Game({ data, onData, developer }: { data: RoomSnapshot; onData: (data: 
     const timestamp = Date.now();
     if (active && timestamp - cursorLastSent.current < 90) return;
     cursorLastSent.current = timestamp;
-    requestRoom({ action: "cursor", code: data.room.code, playerId: data.player.id, x, y, active }).catch(() => undefined);
-  }, [data.player.id, data.room.code, developer]);
+    sendCursor(x, y, active);
+  }, [developer]);
 
   useEffect(() => {
     if (developer || role !== "operator" || (game.phase !== "playing" && game.phase !== "tutorial")) return;
-    const heartbeat = window.setInterval(() => { const point = cursorRef.current; if (point.active) requestRoom({ action: "cursor", code: data.room.code, playerId: data.player.id, ...point }).catch(() => undefined); }, 300);
+    const heartbeat = window.setInterval(() => { const point = cursorRef.current; if (point.active) sendCursor(point.x, point.y, point.active); }, 300);
     return () => window.clearInterval(heartbeat);
-  }, [data.player.id, data.room.code, developer, game.phase, role]);
+  }, [developer, game.phase, role]);
 
   const sendChat = useCallback((symbol: string) => {
     if (developer) return developer.onChat(symbol);
-    requestRoom({ action: "chat", code: data.room.code, playerId: data.player.id, symbol }).catch((cause) => setError(cause instanceof Error ? cause.message : "The sign did not send."));
-  }, [data.player.id, data.room.code, developer]);
+    sendSignal(symbol).catch((cause) => setError(cause instanceof Error ? cause.message : "The sign did not send."));
+  }, [developer]);
 
   const sendMessage = useCallback(async (text: string) => {
     if (developer) return developer.onMessage(text);
     setBusy(true); setError("");
-    try { onData(await requestRoom({ action: "message", code: data.room.code, playerId: data.player.id, text })); }
+    try { onData(await requestRoom({ action: "message", text })); }
     catch (cause) { setError(cause instanceof Error ? cause.message : "The message did not send."); }
     finally { setBusy(false); }
-  }, [data.player.id, data.room.code, developer, onData]);
+  }, [developer, onData]);
 
   async function ready() {
     if (developer) return developer.onReady();
     setBusy(true); setError("");
-    try { onData(await requestRoom({ action: "ready", code: data.room.code, playerId: data.player.id })); }
+    try { onData(await requestRoom({ action: "ready" })); }
     catch (cause) { setError(cause instanceof Error ? cause.message : "Could not ready up."); }
     finally { setBusy(false); }
   }
@@ -793,16 +811,17 @@ function Game({ data, onData, developer }: { data: RoomSnapshot; onData: (data: 
   async function switchRole(targetRole: Role) {
     if (developer) return developer.onRoleChange(targetRole);
     setBusy(true); setError("");
-    try { onData(await requestRoom({ action: "switch-role", code: data.room.code, playerId: data.player.id, targetRole })); }
+    try { onData(await requestRoom({ action: "switch-role", targetRole })); }
     catch (cause) { setError(cause instanceof Error ? cause.message : "Could not switch roles."); }
     finally { setBusy(false); }
   }
 
   return <main className="game-shell" data-role={role} data-developer={Boolean(developer)}>
-    <header className="game-header"><Link className="game-brand" href="/"><Bomb /><b>BOMBA<span>NANA</span></b></Link><div className="room-pill"><Users /> {developer ? "TEST MODE" : "ROOM"} <b>{data.room.code}</b></div><div className="level-pill">{game.phase === "tutorial" ? <b>TUTORIAL</b> : <>LEVEL <b>{game.level === 11 ? "∞" : game.level}</b></>}</div><div className="timer-block" data-urgent={remaining < 30_000 && game.phase === "playing"}><Clock3 /><div><strong>{game.phase === "waiting" ? "READY" : prestart > 0 ? `0:0${prestart}` : formatTime(remaining)}</strong><Progress value={game.phase === "waiting" ? 100 : timePercent} /></div></div><div className="strike-block"><ShieldAlert />{Array.from({ length: game.maxMistakes }, (_, index) => <i key={index} data-hit={game.phase === "tutorial" ? index < (game.tutorial?.practiceMistakes ?? 0) : index < game.mistakes} />)}</div></header>
+    <header className="game-header"><div className="game-header-start"><Link className="game-brand" href="/"><Bomb /><b>BOMBA<span>NANA</span></b></Link>{onLeave && !developer && <button type="button" className="leave-room-button" onClick={onLeave} aria-label="Leave room"><LogOut /><span>LEAVE</span></button>}</div><div className="room-pill"><Users /> {developer ? "TEST MODE" : "ROOM"} <b>{data.room.code}</b></div><div className="level-pill">{game.phase === "tutorial" ? <b>TUTORIAL</b> : <>LEVEL <b>{game.level === 11 ? "∞" : game.level}</b></>}</div><div className="timer-block" data-urgent={remaining < 30_000 && game.phase === "playing"}><Clock3 /><div><strong>{game.phase === "waiting" ? "READY" : prestart > 0 ? `0:0${prestart}` : formatTime(remaining)}</strong><Progress value={game.phase === "waiting" ? 100 : timePercent} /></div></div><div className="strike-block"><ShieldAlert />{Array.from({ length: game.maxMistakes }, (_, index) => <i key={index} data-hit={game.phase === "tutorial" ? index < (game.tutorial?.practiceMistakes ?? 0) : index < game.mistakes} />)}</div></header>
     <section className="role-banner"><div className="role-identity"><span>{meta.monkey}</span><div><small>YOUR ASSIGNMENT</small><h1>{meta.name}</h1></div></div><p><RoleIcon />{meta.ability}</p></section>
     {developer && <section className="developer-toolbar"><div className="developer-heading"><Wrench /><div><b>DEVELOPER MODE</b><span>Timer paused · shared test bomb</span></div></div><div className="developer-role-switcher">{ROLES.map((item) => <Button key={item} variant="outline" data-active={developer.role === item} onClick={() => developer.onRoleChange(item)}><span>{ROLE_META[item].monkey}</span>{ROLE_META[item].short}</Button>)}</div><div className="developer-level-switcher">{LEVELS.map(({ level }) => <button key={level} data-active={developer.level === level && game.phase !== "tutorial"} onClick={() => developer.onLevelChange(level)}>{level === 11 ? "∞" : level}</button>)}</div><details className="developer-solution"><summary>Reveal solution</summary><div>{developer.solution.map((line) => <span key={line}>{line}</span>)}</div></details><div className="developer-actions"><Button variant="outline" data-active={game.phase === "tutorial"} onClick={developer.onTutorialPreview}>Tutorial</Button><Button variant="outline" onClick={developer.onWaitingPreview}>Ready room</Button><Button variant="outline" onClick={developer.onReset}><RefreshCw /> Reset</Button><Button variant="outline" onClick={developer.onExit}><X /></Button></div></section>}
     <div className="progress-rail"><span>{game.phase === "tutorial" ? `${game.tutorial?.step ?? 0}/8 STEPS` : `${game.completed}/${game.moduleCount} MODULES`}</span><Progress value={game.phase === "tutorial" ? ((game.tutorial?.step ?? 0) / 8) * 100 : (game.completed / game.moduleCount) * 100} /><span>{game.phase === "tutorial" ? "INFORMATION CHAIN" : game.levelTitle}</span></div>
+    {banner && <p className="room-notice game-notice" role="status">{banner}</p>}
     {error && <p className="game-error">{error}</p>}
     {game.phase === "waiting" ? <RoundWaitingRoom data={data} onReady={ready} onSwitchRole={switchRole} busy={busy} developer={Boolean(developer)} /> : game.phase === "tutorial" ? <TutorialExperience game={game} role={role} players={data.room.players} busy={busy} onAction={tutorialAct} onCursorMove={role === "operator" ? reportCursor : undefined} /> : <section className="game-workspace" data-role={role}>
       {role === "operator" && <SuitcaseBomb game={game} vision="blind" act={act} busy={busy || prestart > 0} onCursorMove={reportCursor} />}
@@ -891,48 +910,99 @@ function DeveloperMode({ onExit }: { onExit: () => void }) {
   return <Game data={data} onData={() => undefined} developer={{ role, level: state.level, onRoleChange: setRole, onLevelChange: loadLevel, onAction: act, onTutorialAction: tutorialAct, onChat: (symbol) => setMuteSignal({ symbol, updatedAt: Date.now(), active: true }), onMessage: (text) => role !== "specialist" && setState((current) => ({ ...current, messages: [...current.messages, { id: typeof crypto.randomUUID === "function" ? crypto.randomUUID() : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`, senderId: `developer-${role}`, senderRole: role, senderName: "Test Player", text, sentAt: Date.now() }].slice(-40) })), onCursorMove: (x, y, active) => active && setCursor({ x, y, active }), onReady: ready, onWaitingPreview: () => setState((current) => ({ ...current, phase: "waiting", lastResult: "cleared", startAt: null, messages: [] })), onTutorialPreview: loadTutorial, onReset: () => state.phase === "tutorial" ? loadTutorial() : loadLevel(state.level), onExit, solution }} />;
 }
 
+const HOST_OFFLINE_BANNER = "The host's browser went offline. If they don't come back in a few seconds, another player takes over as host automatically.";
+
+function readSavedCode() {
+  try {
+    const saved = sessionStorage.getItem(SESSION_KEY);
+    if (!saved) return "";
+    const parsed = JSON.parse(saved) as { code?: unknown };
+    return typeof parsed.code === "string" ? parsed.code : "";
+  } catch {
+    return "";
+  }
+}
+
+function forgetSavedCode() {
+  try { sessionStorage.removeItem(SESSION_KEY); } catch { /* Storage may be blocked. */ }
+}
+
 export default function GameClient() {
   const [data, setData] = useState<RoomSnapshot | null>(null);
-  const [session, setSession] = useState<Session | null>(null);
+  const [connection, setConnection] = useState<RoomConnection | null>(null);
   const [loading, setLoading] = useState(true);
   const [developerMode, setDeveloperMode] = useState(false);
+  const [notice, setNotice] = useState("");
+  const [hostOnline, setHostOnline] = useState(true);
+  const [live, setLive] = useState<LiveFeed>({ cursor: null, signal: null });
+  const [clock, setClock] = useState(0);
 
+  // Reopen the room this tab was in before a reload.
   useEffect(() => {
     let active = true;
     queueMicrotask(() => {
       if (!active) return;
-      const saved = sessionStorage.getItem("bombanana-session");
-      if (!saved) { setLoading(false); return; }
-      try {
-        const parsed = JSON.parse(saved) as Session;
-        setSession(parsed);
-        fetch(`/api/room?code=${encodeURIComponent(parsed.code)}&playerId=${encodeURIComponent(parsed.playerId)}`, { cache: "no-store" })
-          .then(async (response) => { if (!response.ok) throw new Error(); return response.json() as Promise<RoomSnapshot>; })
-          .then((snapshot) => { if (active) setData(snapshot); })
-          .catch(() => { if (active) { sessionStorage.removeItem("bombanana-session"); setSession(null); } })
-          .finally(() => { if (active) setLoading(false); });
-      } catch { sessionStorage.removeItem("bombanana-session"); setLoading(false); }
+      const code = readSavedCode();
+      if (!code) { setLoading(false); return; }
+      resumeRoom(code)
+        .then((result) => {
+          if (!active) return;
+          if (!result) { forgetSavedCode(); return; }
+          setConnection(result.connection);
+          setData(result.snapshot as unknown as RoomSnapshot);
+        })
+        // Keep the saved room on a network error so a later reload can retry.
+        .catch((cause) => { if (active) setNotice(`Couldn't reopen your room: ${describeError(cause)} Reload the page to try again.`); })
+        .finally(() => { if (active) setLoading(false); });
     });
     return () => { active = false; };
   }, []);
 
+  // Live room updates replace the old polling loop.
   useEffect(() => {
-    if (!session || developerMode) return;
-    const delay = data?.room.game?.phase === "waiting" ? 350 : data?.room.status === "playing" && data.player.role === "observer" ? 180 : 800;
-    const poll = window.setInterval(async () => {
-      try {
-        const response = await fetch(`/api/room?code=${encodeURIComponent(session.code)}&playerId=${encodeURIComponent(session.playerId)}&t=${Date.now()}`, { cache: "no-store" });
-        if (response.ok) setData((await response.json()) as RoomSnapshot);
-      } catch { /* Preserve the latest usable screen during a brief interruption. */ }
-    }, delay);
-    const heartbeat = window.setInterval(() => { requestRoom({ action: "heartbeat", code: session.code, playerId: session.playerId }).catch(() => undefined); }, 7_000);
-    return () => { window.clearInterval(poll); window.clearInterval(heartbeat); };
-  }, [data?.player.role, data?.room.game?.phase, data?.room.status, developerMode, session]);
+    if (!connection) return;
+    return connection.subscribe({
+      onSnapshot: (snapshot) => setData(snapshot as unknown as RoomSnapshot),
+      onRemoved: (reason) => {
+        connection.close();
+        forgetSavedCode();
+        setConnection(null);
+        setData(null);
+        setNotice(reason);
+      },
+      onHostStatus: ({ hostOnline: online }) => setHostOnline(online),
+    });
+  }, [connection]);
 
-  const enter = useCallback((next: RoomSnapshot) => { setData(next); setSession({ code: next.room.code, playerId: next.player.id }); }, []);
+  // DEAF always sees the Blind cursor and the Mute sign. In the tutorial everyone does.
+  const needsLive = Boolean(connection && data && (data.player.role === "observer" || data.room.game.phase === "tutorial"));
+  useEffect(() => {
+    if (!connection || !needsLive) return;
+    const stop = connection.watchLive(setLive);
+    const timer = window.setInterval(() => setClock(serverNow()), 250);
+    return () => { stop(); window.clearInterval(timer); };
+  }, [connection, needsLive]);
+  const view = useMemo(() => (data && needsLive ? withLiveFeed(data, live, clock) : data), [clock, data, live, needsLive]);
+
+  const enter = useCallback((next: RoomConnection, snapshot: RoomSnapshot) => {
+    setNotice("");
+    setHostOnline(true);
+    setConnection(next);
+    setData(snapshot);
+  }, []);
+
+  const leave = useCallback(async () => {
+    await leaveRoom();
+    forgetSavedCode();
+    setConnection(null);
+    setData(null);
+    setNotice("");
+  }, []);
+
   if (loading) return <div className="loading-screen"><Bomb /><span>OPENING CASE</span></div>;
   if (developerMode) return <DeveloperMode onExit={() => setDeveloperMode(false)} />;
-  if (!data) return <StartScreen onEnter={enter} onTest={() => setDeveloperMode(true)} />;
-  if (data.room.status === "lobby") return <Lobby data={data} onData={setData} onTest={() => setDeveloperMode(true)} />;
-  return <Game data={data} onData={setData} />;
+  if (!view || !connection) return <StartScreen onEnter={enter} onTest={() => setDeveloperMode(true)} notice={notice} />;
+  const banner = !hostOnline && !view.room.isHost ? HOST_OFFLINE_BANNER : "";
+  if (view.room.status === "lobby") return <Lobby data={view} onData={setData} onTest={() => setDeveloperMode(true)} onLeave={leave} banner={banner} />;
+  return <Game data={view} onData={setData} onLeave={leave} banner={banner} />;
 }

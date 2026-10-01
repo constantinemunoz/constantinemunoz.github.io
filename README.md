@@ -8,68 +8,94 @@ then keep going in infinite mode.
 
 Live site: <https://constantinemunoz.github.io/>
 
-## What runs where
+## How it is hosted
 
-| Where | What works |
-| --- | --- |
-| GitHub Pages (this site) | The full client in **solo developer mode**: every level, every module, the tutorial and the field guide. |
-| Local dev server / Cloudflare | Everything above **plus three-player rooms** (`/api/room`, Cloudflare D1 database). |
+Everything is free:
 
-GitHub Pages only serves files, so the multiplayer room API and its database cannot run
-there. The static build detects the missing server and shows a notice on the start screen
-instead of failing. To play with three people, run the project locally (below) or host the
-Cloudflare build.
+| Piece | Service | Plan |
+| --- | --- | --- |
+| The website | GitHub Pages | Free |
+| Multiplayer rooms | Firebase Realtime Database + anonymous sign-in | Spark (free, no card) |
 
-## Run the full game locally
+The site is plain files. There is no server of our own. When someone creates a room,
+**their browser becomes the room host**: it runs the referee (`lib/room-engine.ts`),
+applies everyone's moves and sends each player only what their role is allowed to see.
+Firebase carries the messages in real time. If the host closes their tab, another player
+takes over automatically after a few seconds.
+
+The free Spark plan allows 100 open browser tabs at once (about 33 games) and 10 GB of
+downloads a month. If a limit is ever reached, Firebase pauses until the next month; it
+never charges you.
+
+One trade-off: the host's browser holds the full bomb, so a host who opens the browser's
+developer tools could peek. The other two players' secrets are protected by the database
+rules.
+
+## One-time Firebase setup
+
+Already done for `bombanana-ee9ee` except for the rules:
+
+1. In the [Firebase console](https://console.firebase.google.com/), open the project,
+   then **Realtime Database**, then the **Rules** tab.
+2. Replace everything in the editor with the contents of
+   [`database.rules.json`](database.rules.json) and click **Publish**.
+
+Until the rules are published the database stays locked and Create/Join show
+"Firebase refused the request". Publish again whenever `database.rules.json` changes.
+
+If you ever recreate the project: create a Realtime Database (locked mode), enable
+**Authentication → Sign-in method → Anonymous**, add `constantinemunoz.github.io` under
+**Authentication → Settings → Authorized domains**, register a web app, and paste its
+config into `lib/firebase-config.ts`. The web config is public by design.
+
+## Deployment
+
+`.github/workflows/deploy-pages.yml` runs on every push to `main`: it installs
+dependencies, runs the tests, builds the static site and publishes it to GitHub Pages.
+
+**One GitHub setting has to be changed by hand.** GitHub creates `<user>.github.io`
+repositories with the Pages source set to "Deploy from a branch", which runs GitHub's own
+Jekyll build on every push and competes with this workflow. Open **Settings → Pages**, and
+under **Build and deployment** set **Source** to **GitHub Actions**.
+
+## Run it on your computer
 
 Requires Node.js 22.13 or newer. The setup scripts enable pnpm, install the locked
-dependencies, build, create the local D1 database, apply the migrations and start the dev
-server on <http://localhost:5173>.
+dependencies and start the dev server at <http://localhost:3000>. Local play uses the same
+Firebase database as the live site.
 
 ```bash
-./SETUP_AND_RUN_MAC_LINUX.command            # macOS / Linux
-powershell -ExecutionPolicy Bypass -File .\SETUP_AND_RUN_WINDOWS.ps1   # Windows
+./SETUP_AND_RUN_MAC_LINUX.command                                       # macOS / Linux
+powershell -ExecutionPolicy Bypass -File .\SETUP_AND_RUN_WINDOWS.ps1    # Windows
 ```
 
-See [START_HERE.md](START_HERE.md) for the long version, including how to reset the local
-database.
+Each browser tab is a separate player, so you can test a room alone with three tabs.
 
 ## Commands
 
 ```bash
 pnpm install --frozen-lockfile   # install the exact locked dependencies
-pnpm run dev                     # vinext dev server with the room API (port 5173)
-pnpm run build                   # Cloudflare / vinext production build (dist/)
-pnpm run build:static            # GitHub Pages build without the API (out/)
-pnpm run test:game               # 22,000 randomized module and tutorial rounds
+pnpm run dev                     # dev server on http://localhost:3000
+pnpm run build                   # static site in ./out (what GitHub Pages serves)
+pnpm run test                    # game rules (22,000 random rounds) + room referee tests
 pnpm run lint                    # ESLint
 pnpm run typecheck               # tsc --noEmit
 ```
 
-`build:static` temporarily moves `app/api` out of the way, runs `next build` with
-`output: "export"`, restores the folder and writes `out/.nojekyll` so GitHub Pages serves
-the `_next/` assets.
-
-## Deployment
-
-`.github/workflows/deploy-pages.yml` runs on every push to `main`: it installs
-dependencies, runs the game tests, builds the static site and publishes it with
-`actions/deploy-pages`.
-
-The workflow tries to enable Pages automatically. If the first run fails at the
-"Configure GitHub Pages" step, open **Settings → Pages** in this repository and set
-**Source** to **GitHub Actions**, then re-run the workflow.
+To develop against local Firebase emulators instead of the real project, start the
+database and auth emulators (`npx firebase-tools emulators:start --only database,auth`,
+which needs Java) and run the app with `NEXT_PUBLIC_FIREBASE_EMULATOR=1`.
 
 ## Project layout
 
 - `app/game-client.tsx` — start screen, lobby, ready room, the three role views, tutorial, developer mode
 - `app/globals.css` — the complete visual design
-- `app/api/room/route.ts` — multiplayer rooms, roles, chat, ready-up and level flow (server build only)
 - `lib/game.ts` — module rules, levels, timers, tutorial logic and per-role visibility
-- `db/`, `drizzle/` — D1 schema and migrations
-- `scripts/test-game-logic.mjs` — randomized module and tutorial tests
-- `scripts/build-static.mjs` — GitHub Pages build
-- `docs/CODE_REVIEW.md` — findings from the code review done when the site was set up
-- `docs/vinext-starter.md` — the original vinext starter notes (Cloudflare hosting, D1, ChatGPT sign-in helpers)
+- `lib/room-engine.ts` — the room referee that runs in the host's browser
+- `lib/room-client.ts` — Firebase connection: create, join, rejoin, leave, host takeover
+- `lib/firebase-config.ts` — the public Firebase web config
+- `database.rules.json` — who may read and write what in the database
+- `scripts/test-game-logic.mjs`, `scripts/test-room-engine.mjs` — tests
+- `docs/CODE_REVIEW.md` — the code review done when the site was set up, with status
 
 BOMBANANA is an unofficial browser tribute and is not affiliated with Lefto Studio or TARK.

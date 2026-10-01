@@ -200,6 +200,14 @@ const BRAILLE_NUMBERS = [1, 2, 3, 4, 5, 6, 7, 8, 9];
 
 const pick = <T,>(items: readonly T[]) => items[Math.floor(Math.random() * items.length)];
 
+// crypto.randomUUID only exists in secure contexts (https or localhost). The
+// room host runs this code in a browser, so fall back instead of throwing when
+// someone opens a dev server over plain http on their local network.
+export function makeId() {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") return crypto.randomUUID();
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+}
+
 const shuffled = <T,>(items: readonly T[]) => {
   const copy = [...items];
   for (let index = copy.length - 1; index > 0; index -= 1) {
@@ -353,13 +361,13 @@ export function createTutorialGameState(chatEnabled = false): GameState {
     step: 0,
     practiceMistakes: 0,
     completedAt: null,
-    feed: [{ id: crypto.randomUUID(), kind: "system", text: "Tutorial-only shared view connected." }],
+    feed: [{ id: makeId(), kind: "system", text: "Tutorial-only shared view connected." }],
   };
   return state;
 }
 
 function tutorialEntry(kind: TutorialFeedEntry["kind"], text: string, role?: Role): TutorialFeedEntry {
-  return { id: crypto.randomUUID(), kind, text, role };
+  return { id: makeId(), kind, text, role };
 }
 
 export function applyTutorialAction(state: GameState, role: Role, action: TutorialAction, value?: number | string) {
