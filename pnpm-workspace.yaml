@@ -1,21 +1,13 @@
-# Copied Sites are standalone projects and cannot inherit the monorepo policy.
+# Only install package versions that have been public for at least a week.
 minimumReleaseAge: 10080
 minimumReleaseAgeIgnoreMissingTime: false
 trustLockfile: false
 strictDepBuilds: true
 allowBuilds:
-  esbuild: true
+  # Firebase SDK helper scripts that the static site does not need.
+  '@firebase/util': false
   fsevents: true
+  protobufjs: false
   sharp: true
   unrs-resolver: true
-  workerd: true
-storeDir: ${SITES_PNPM_SHARED_STORE:-.sites-runtime/pnpm-store}
-cacheDir: ${SITES_PNPM_SHARED_STORE:-.sites-runtime/pnpm-store}/policy-cache
-enableGlobalVirtualStore: false
-# A later project-only session must not mutate a shared-store inode through node_modules.
-packageImportMethod: clone-or-copy
-# The explicit installer owns dependency setup, including restored workspaces.
 verifyDepsBeforeRun: false
-optimisticRepeatInstall: false
-overrides:
-  miniflare>sharp: 0.35.4

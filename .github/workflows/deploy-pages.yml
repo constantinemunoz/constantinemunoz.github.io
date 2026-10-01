@@ -29,11 +29,11 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Run game logic tests
-        run: pnpm run test:game
+      - name: Run game and room tests
+        run: pnpm run test
 
       - name: Build static site
-        run: pnpm run build:static
+        run: pnpm run build
 
       # The repository's Pages source must be "GitHub Actions" (Settings > Pages).
       # The workflow token is not allowed to change that setting itself.

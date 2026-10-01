@@ -25,18 +25,7 @@ fi
 echo "Installing BOMBANANA packages..."
 pnpm install --frozen-lockfile
 
-if [ ! -f .bombanana-local-ready ]; then
-  echo "Building BOMBANANA..."
-  pnpm run build
-
-  echo "Creating the local multiplayer database..."
-  for migration in drizzle/*.sql; do
-    node --import ./scripts/sites-env.mjs ./node_modules/wrangler/bin/wrangler.js d1 execute DB --local --config dist/server/wrangler.json --persist-to .wrangler/state --file "$migration"
-  done
-  touch .bombanana-local-ready
-fi
-
-echo "Starting BOMBANANA..."
-echo "Keep this window open while you play. Press Control+C to stop the game."
+echo "Starting BOMBANANA at http://localhost:3000"
+echo "Multiplayer rooms use the same Firebase database as the live site."
+echo "Keep this window open while you play. Press Control+C to stop."
 pnpm run dev
-

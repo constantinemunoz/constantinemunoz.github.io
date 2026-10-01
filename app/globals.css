@@ -2204,6 +2204,13 @@ html, body { width: 100%; height: 100%; overflow: hidden; overscroll-behavior: n
   .tutorial-manual-sheet { grid-template-rows: 1fr auto; }
 }
 
-/* Shown on plain-file hosts (GitHub Pages) where /api/room does not exist. */
-.static-notice { margin: 0 0 14px; padding: 10px 12px; border: 2px solid var(--ink); background: #fff1b8; color: var(--ink); font-size: .8rem; line-height: 1.35; }
-.static-notice b { display: block; margin-bottom: 5px; font: 950 .68rem/1 var(--font-mono); letter-spacing: .13em; }
+
+/* Room notices: start screen messages, lobby and in-game host status. */
+.room-notice { margin: 0 0 14px; padding: 10px 12px; border: 2px solid var(--ink); background: #fff1b8; color: var(--ink); font-size: .82rem; font-weight: 700; line-height: 1.35; }
+.game-notice { flex: 0 0 auto; margin: 8px 0 0; }
+.lobby-leave-button { margin-top: 10px; }
+.game-header-start { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.leave-room-button { display: inline-flex; align-items: center; gap: 6px; padding: 7px 10px; border: 2px solid var(--ink); border-radius: 999px; background: #fff; color: var(--ink); font: 900 .68rem/1 var(--font-mono); letter-spacing: .1em; }
+.leave-room-button svg { width: 14px; height: 14px; }
+.leave-room-button:hover { background: var(--ink); color: var(--yellow); }
+@media (max-width: 780px) { .leave-room-button span { display: none; } }
