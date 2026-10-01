@@ -56,10 +56,13 @@ the `_next/` assets.
 dependencies, runs the game tests, builds the static site and publishes it with
 `actions/deploy-pages`.
 
-The workflow switches the repository's Pages source to GitHub Actions on every run, so
-GitHub's built-in Jekyll build no longer competes with it. If a run prints a warning that
-it could not do that, open **Settings → Pages** in this repository, set **Source** to
-**GitHub Actions**, and re-run the workflow.
+**One setting has to be changed by hand.** GitHub creates `<user>.github.io` repositories
+with the Pages source set to "Deploy from a branch", which runs GitHub's own Jekyll build
+on every push and competes with this workflow (the Jekyll build has no `index.html`, so
+when it wins the site shows a 404). Open **Settings → Pages**, and under **Build and
+deployment** set **Source** to **GitHub Actions**. The workflow cannot do this itself: the
+Actions token is not allowed to change Pages settings. After that, every push to `main`
+deploys through the workflow only.
 
 ## Project layout
 
