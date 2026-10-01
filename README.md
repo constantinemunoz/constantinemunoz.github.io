@@ -56,9 +56,10 @@ the `_next/` assets.
 dependencies, runs the game tests, builds the static site and publishes it with
 `actions/deploy-pages`.
 
-The workflow tries to enable Pages automatically. If the first run fails at the
-"Configure GitHub Pages" step, open **Settings → Pages** in this repository and set
-**Source** to **GitHub Actions**, then re-run the workflow.
+The workflow switches the repository's Pages source to GitHub Actions on every run, so
+GitHub's built-in Jekyll build no longer competes with it. If a run prints a warning that
+it could not do that, open **Settings → Pages** in this repository, set **Source** to
+**GitHub Actions**, and re-run the workflow.
 
 ## Project layout
 

@@ -35,6 +35,16 @@ jobs:
       - name: Build static site
         run: pnpm run build:static
 
+      # User sites default to the legacy "deploy from a branch" source, which
+      # runs a competing Jekyll build on every push. Point Pages at this
+      # workflow instead; configure-pages below creates the site if needed.
+      - name: Use GitHub Actions as the Pages source
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api --method PUT "repos/${GITHUB_REPOSITORY}/pages" -f build_type=workflow \
+            || echo "::warning::Could not switch the Pages source automatically. Open Settings > Pages and set Source to GitHub Actions."
+
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5
         with:
