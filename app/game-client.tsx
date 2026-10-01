@@ -62,9 +62,11 @@ import {
   DIRECTION_RULES,
   LEVELS,
   levelDefinition,
+  makeId,
   nextLevelAfterClear,
   PIANO_RULES,
   publicStateForRole,
+  resetLog,
   ROLE_META,
   ROLES,
   SLIDER_NUMBER_GROUPS,
@@ -73,6 +75,7 @@ import {
   type GameState,
   type LightColor,
   type ModuleAction,
+  type ActionLogEntry,
   type ModuleKey,
   type Role,
   type SliderTest,
@@ -99,7 +102,7 @@ type SliderView = { lights?: LightColor[]; braille?: number[]; current: boolean[
 type DirectionView = { light?: LightColor; braille?: number; pressed?: Direction | null; solved: boolean };
 type CalculatorView = { expression?: string; entered?: string; enteredLength?: number; stage: "entry" | "confirm"; light?: LightColor | null; pressed?: number | null; solved: boolean };
 type PianoView = { modeLight?: LightColor; melody?: LightColor[]; pressedCount?: number; solved: boolean };
-type ChatMessageView = { id: string; senderRole: Role; senderName: string; text: string; sentAt: number };
+type ChatMessageView = { id: string; senderRole: Role; senderName: string; text: string; sentAt: number; seq?: number };
 type TutorialView = {
   step: number;
   practiceMistakes: number;
@@ -118,7 +121,7 @@ type PublicGameView = {
   durationMs: number;
   mistakes: number;
   maxMistakes: number;
-  actionLog: string[];
+  actionLog: Array<ActionLogEntry | string>;
   completed: number;
   moduleCount: number;
   chatEnabled: boolean;
@@ -489,8 +492,8 @@ function MuteSignalStage({ signal }: { signal?: MuteSignal }) {
   return <div className="mute-signal-stage"><div className="mute-signal-space" aria-live="polite">{signal?.active && <div className="mute-signal-bubble" key={signal.updatedAt}>{signal.symbol}</div>}</div><div className="mute-monkey"><Hand className="mute-hand mute-hand-left" /><span>🙊</span><Hand className="mute-hand mute-hand-right" /></div><small>{signal?.active ? "SIGN RECEIVED" : "WAITING FOR SIGN"}</small></div>;
 }
 
-function ObserverPanel({ game }: { game: PublicGameView }) {
-  return <div className="deaf-split"><aside className="deaf-mute-pane"><header><span>🙊</span><b>MUTE LIVE</b></header><MuteSignalStage signal={game.muteSignal} /></aside><section className="deaf-live-pane"><header><span><i /> LIVE</span><b>BLIND VIEW</b></header><SuitcaseBomb game={game} vision="color" cursor={game.operatorCursor} /></section></div>;
+function ObserverPanel({ game, feed }: { game: PublicGameView; feed: ReactNode }) {
+  return <><section className="deaf-live-pane"><header><span><i /> LIVE</span><b>BLIND VIEW</b></header><SuitcaseBomb game={game} vision="color" cursor={game.operatorCursor} /></section><div className="deaf-side"><aside className="deaf-mute-pane"><header><span>🙊</span><b>MUTE LIVE</b></header><MuteSignalStage signal={game.muteSignal} /></aside>{feed}</div></>;
 }
 
 const CHAT_EXPRESSIONS = [
@@ -508,7 +511,11 @@ function MuteChat({ onChat }: { onChat: (symbol: string) => void }) {
   return <Popover open={open} onOpenChange={(next) => { setOpen(next); if (!next) setPage("menu"); }}><PopoverTrigger asChild><Button className="mute-chat-trigger" aria-label="Open symbol chat"><MessageCircle /></Button></PopoverTrigger><PopoverContent className="mute-chat-popover" align="end" sideOffset={9}><header className="mute-chat-header">{page !== "menu" && <button onClick={() => setPage("menu")} aria-label="Back to symbol categories"><ArrowLeft /></button>}<HeaderIcon aria-hidden="true" /></header>{page === "menu" && <div className="chat-mode-grid"><button onClick={() => setPage("numbers")} aria-label="Open numbers"><Hash /></button><button onClick={() => setPage("expressions")} aria-label="Open expressions"><Smile /></button></div>}{page === "numbers" && <div className="chat-symbol-grid chat-number-grid">{Array.from({ length: 11 }, (_, number) => <button key={number} onClick={() => choose(String(number))}>{number}</button>)}</div>}{page === "expressions" && <div className="chat-symbol-grid chat-expression-grid">{CHAT_EXPRESSIONS.map(({ symbol, label }) => <button key={label} onClick={() => choose(symbol)} aria-label={label}>{symbol}</button>)}</div>}</PopoverContent></Popover>;
 }
 
-function CaseFeed({ role, actionLog, chatEnabled, messages, onSend, busy }: { role: Role; actionLog: string[]; chatEnabled: boolean; messages: ChatMessageView[]; onSend: (text: string) => void; busy: boolean }) {
+type FeedItem =
+  | { kind: "action"; key: string; seq: number; text: string; error: boolean }
+  | { kind: "message"; key: string; seq: number; message: ChatMessageView };
+
+function CaseFeed({ role, actionLog, chatEnabled, messages, onSend, busy }: { role: Role; actionLog: Array<ActionLogEntry | string>; chatEnabled: boolean; messages: ChatMessageView[]; onSend: (text: string) => void; busy: boolean }) {
   const [draft, setDraft] = useState("");
   const streamRef = useRef<HTMLDivElement>(null);
   const readOnly = role === "specialist";
@@ -519,15 +526,24 @@ function CaseFeed({ role, actionLog, chatEnabled, messages, onSend, busy }: { ro
     onSend(text);
     setDraft("");
   }
-  const visibleMessages = messages.slice(-12);
-  const visibleActions = actionLog.slice(-8);
-  const newestMessage = visibleMessages.at(-1)?.id;
-  const newestAction = visibleActions.at(-1);
+  // Chats and game notices share one sequence, so the newest is always at the bottom.
+  const items: FeedItem[] = [
+    ...actionLog.map((entry, index): FeedItem => {
+      const action = typeof entry === "string" ? { text: entry, seq: 0, tone: undefined } : entry;
+      return { kind: "action", key: `action-${action.seq}-${index}`, seq: action.seq, text: action.text, error: action.tone === "error" };
+    }),
+    ...messages.map((message): FeedItem => ({ kind: "message", key: message.id, seq: message.seq ?? 0, message })),
+  ]
+    .sort((a, b) => a.seq - b.seq)
+    .slice(-20);
+  const newest = items.at(-1)?.key;
   useEffect(() => {
     const stream = streamRef.current;
     if (stream) stream.scrollTop = stream.scrollHeight;
-  }, [newestAction, newestMessage]);
-  return <aside className="case-feed" data-role={role}><header><Radio /><b>CASE FEED</b>{chatEnabled && <span><MessageCircle />{role === "observer" ? "OUTGOING ONLY" : role === "specialist" ? "READ + SIGNAL" : "TEAM CHAT"}</span>}</header><div ref={streamRef} className="case-feed-stream" aria-live="polite">{visibleActions.map((entry, index) => <article className="case-action-entry" key={`${entry}-${index}`}><small>{index === visibleActions.length - 1 ? "NOW" : `-${visibleActions.length - index - 1}`}</small><p>{entry}</p></article>)}{visibleMessages.map((message) => <article className="case-chat-entry" key={message.id} data-role={message.senderRole}><div><b>{ROLE_META[message.senderRole].monkey} {message.senderName}</b><small>{ROLE_META[message.senderRole].short}</small></div><p>{message.text}</p></article>)}</div>{chatEnabled && (readOnly ? <div className="case-feed-readonly"><span>🙊</span><div><b>MUTE CANNOT TYPE</b><small>Use the symbol button in the manual.</small></div></div> : <form className="case-feed-form" onSubmit={submit}><Input value={draft} onChange={(event) => setDraft(event.target.value.slice(0, 240))} placeholder={role === "observer" ? "Send a message…" : "Message the team…"} disabled={busy} aria-label="Team chat message" /><Button type="submit" disabled={busy || !draft.trim()} aria-label="Send message"><Send /></Button></form>)}</aside>;
+  }, [newest]);
+  return <aside className="case-feed" data-role={role}><header><Radio /><b>CASE FEED</b>{chatEnabled && <span><MessageCircle />{role === "observer" ? "OUTGOING ONLY" : role === "specialist" ? "READ + SIGNAL" : "TEAM CHAT"}</span>}</header><div ref={streamRef} className="case-feed-stream" aria-live="polite">{items.map((item, index) => item.kind === "action"
+    ? <article className="case-action-entry" data-tone={item.error ? "error" : "info"} key={item.key}>{item.error ? <span className="case-alert-mark" aria-label="Wrong answer">!</span> : <small>{index === items.length - 1 ? "NOW" : "LOG"}</small>}<p>{item.text}</p></article>
+    : <article className="case-chat-entry" key={item.key} data-role={item.message.senderRole}><div><b>{ROLE_META[item.message.senderRole].monkey} {item.message.senderName}</b><small>{ROLE_META[item.message.senderRole].short}</small></div><p>{item.message.text}</p></article>)}</div>{chatEnabled && (readOnly ? <div className="case-feed-readonly"><span>🙊</span><div><b>MUTE CANNOT TYPE</b><small>Use the symbol button in the manual.</small></div></div> : <form className="case-feed-form" onSubmit={submit}><Input value={draft} onChange={(event) => setDraft(event.target.value.slice(0, 240))} placeholder={role === "observer" ? "Send a message…" : "Message the team…"} disabled={busy} aria-label="Team chat message" /><Button type="submit" disabled={busy || !draft.trim()} aria-label="Send message"><Send /></Button></form>)}</aside>;
 }
 
 function ManualSteps({ steps }: { steps: ReactNode[] }) {
@@ -816,6 +832,8 @@ function Game({ data, onData, developer, onLeave, banner }: { data: RoomSnapshot
     finally { setBusy(false); }
   }
 
+  const caseFeed = <CaseFeed role={role} actionLog={game.actionLog} chatEnabled={game.chatEnabled} messages={game.messages} onSend={sendMessage} busy={busy} />;
+
   return <main className="game-shell" data-role={role} data-developer={Boolean(developer)}>
     <header className="game-header"><div className="game-header-start"><Link className="game-brand" href="/"><Bomb /><b>BOMBA<span>NANA</span></b></Link>{onLeave && !developer && <button type="button" className="leave-room-button" onClick={onLeave} aria-label="Leave room"><LogOut /><span>LEAVE</span></button>}</div><div className="room-pill"><Users /> {developer ? "TEST MODE" : "ROOM"} <b>{data.room.code}</b></div><div className="level-pill">{game.phase === "tutorial" ? <b>TUTORIAL</b> : <>LEVEL <b>{game.level === 11 ? "∞" : game.level}</b></>}</div><div className="timer-block" data-urgent={remaining < 30_000 && game.phase === "playing"}><Clock3 /><div><strong>{game.phase === "waiting" ? "READY" : prestart > 0 ? `0:0${prestart}` : formatTime(remaining)}</strong><Progress value={game.phase === "waiting" ? 100 : timePercent} /></div></div><div className="strike-block"><ShieldAlert />{Array.from({ length: game.maxMistakes }, (_, index) => <i key={index} data-hit={game.phase === "tutorial" ? index < (game.tutorial?.practiceMistakes ?? 0) : index < game.mistakes} />)}</div></header>
     <section className="role-banner"><div className="role-identity"><span>{meta.monkey}</span><div><small>YOUR ASSIGNMENT</small><h1>{meta.name}</h1></div></div><p><RoleIcon />{meta.ability}</p></section>
@@ -825,9 +843,9 @@ function Game({ data, onData, developer, onLeave, banner }: { data: RoomSnapshot
     {error && <p className="game-error">{error}</p>}
     {game.phase === "waiting" ? <RoundWaitingRoom data={data} onReady={ready} onSwitchRole={switchRole} busy={busy} developer={Boolean(developer)} /> : game.phase === "tutorial" ? <TutorialExperience game={game} role={role} players={data.room.players} busy={busy} onAction={tutorialAct} onCursorMove={role === "operator" ? reportCursor : undefined} /> : <section className="game-workspace" data-role={role}>
       {role === "operator" && <SuitcaseBomb game={game} vision="blind" act={act} busy={busy || prestart > 0} onCursorMove={reportCursor} />}
-      {role === "observer" && <ObserverPanel game={game} />}
+      {role === "observer" && <ObserverPanel game={game} feed={caseFeed} />}
       {role === "specialist" && <SpecialistPanel key={`${game.level}-${game.activeModules.join("-")}`} game={game} onChat={sendChat} />}
-      <CaseFeed role={role} actionLog={game.actionLog} chatEnabled={game.chatEnabled} messages={game.messages} onSend={sendMessage} busy={busy} />
+      {role !== "observer" && caseFeed}
     </section>}
   </main>;
 }
@@ -835,7 +853,7 @@ function Game({ data, onData, developer, onLeave, banner }: { data: RoomSnapshot
 function createDeveloperBomb(level = 1) {
   const next = createGameState(level, "playing", "new", true);
   next.startAt = null;
-  next.actionLog = [`Developer Level ${level} loaded. Timer paused.`];
+  resetLog(next, `Developer Level ${level} loaded. Timer paused.`);
   return next;
 }
 
@@ -907,7 +925,7 @@ function DeveloperMode({ onExit }: { onExit: () => void }) {
     return lines;
   }, [state]);
 
-  return <Game data={data} onData={() => undefined} developer={{ role, level: state.level, onRoleChange: setRole, onLevelChange: loadLevel, onAction: act, onTutorialAction: tutorialAct, onChat: (symbol) => setMuteSignal({ symbol, updatedAt: Date.now(), active: true }), onMessage: (text) => role !== "specialist" && setState((current) => ({ ...current, messages: [...current.messages, { id: typeof crypto.randomUUID === "function" ? crypto.randomUUID() : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`, senderId: `developer-${role}`, senderRole: role, senderName: "Test Player", text, sentAt: Date.now() }].slice(-40) })), onCursorMove: (x, y, active) => active && setCursor({ x, y, active }), onReady: ready, onWaitingPreview: () => setState((current) => ({ ...current, phase: "waiting", lastResult: "cleared", startAt: null, messages: [] })), onTutorialPreview: loadTutorial, onReset: () => state.phase === "tutorial" ? loadTutorial() : loadLevel(state.level), onExit, solution }} />;
+  return <Game data={data} onData={() => undefined} developer={{ role, level: state.level, onRoleChange: setRole, onLevelChange: loadLevel, onAction: act, onTutorialAction: tutorialAct, onChat: (symbol) => setMuteSignal({ symbol, updatedAt: Date.now(), active: true }), onMessage: (text) => role !== "specialist" && setState((current) => { const seq = (current.feedSeq ?? 0) + 1; return { ...current, feedSeq: seq, messages: [...current.messages, { id: makeId(), senderId: `developer-${role}`, senderRole: role, senderName: "Test Player", text, sentAt: Date.now(), seq }].slice(-40) }; }), onCursorMove: (x, y, active) => active && setCursor({ x, y, active }), onReady: ready, onWaitingPreview: () => setState((current) => ({ ...current, phase: "waiting", lastResult: "cleared", startAt: null, messages: [] })), onTutorialPreview: loadTutorial, onReset: () => state.phase === "tutorial" ? loadTutorial() : loadLevel(state.level), onExit, solution }} />;
 }
 
 const HOST_OFFLINE_BANNER = "The host's browser went offline. If they don't come back in a few seconds, another player takes over as host automatically.";

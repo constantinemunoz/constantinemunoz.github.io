@@ -2214,3 +2214,33 @@ html, body { width: 100%; height: 100%; overflow: hidden; overscroll-behavior: n
 .leave-room-button svg { width: 14px; height: 14px; }
 .leave-room-button:hover { background: var(--ink); color: var(--yellow); }
 @media (max-width: 780px) { .leave-room-button span { display: none; } }
+
+/* Deaf Observer: live bomb on the left; Mute's signs stacked above the case feed on the right. */
+.game-workspace[data-role="observer"] > .deaf-live-pane { border-radius: 18px; }
+.deaf-side { min-width: 0; min-height: 0; display: grid; grid-template-rows: minmax(190px, 2fr) minmax(0, 3fr); gap: 12px; }
+.deaf-side > .deaf-mute-pane { min-height: 0; overflow: hidden; border-radius: 18px; }
+.deaf-side .mute-signal-stage { height: 100%; min-height: 0; grid-template-rows: minmax(0, 1fr) auto auto; align-items: center; gap: 4px; padding: 10px 10px 12px; }
+.deaf-side .mute-signal-space { min-height: 0; align-self: end; }
+.deaf-side .mute-signal-bubble { min-width: 70px; min-height: 58px; padding: 6px 14px; border-width: 3px; box-shadow: 4px 4px 0 var(--yellow); font-size: clamp(2rem, 3vw, 3rem); }
+.deaf-side .mute-signal-bubble::after { bottom: -14px; width: 20px; height: 20px; border-width: 3px; }
+.deaf-side .mute-monkey { width: auto; min-height: 0; padding-top: 10px; }
+.deaf-side .mute-monkey > span { font-size: clamp(3.2rem, 4.6vw, 4.6rem); }
+.deaf-side .mute-hand { width: 36px; height: 36px; bottom: 0; }
+.deaf-side .mute-signal-stage > small { margin-top: 4px; font-size: .62rem; }
+@media (max-width: 1050px) {
+  .deaf-side { grid-template-rows: auto minmax(260px, auto); }
+  .deaf-side > .deaf-mute-pane { min-height: 230px; }
+}
+
+/* Wrong answers in the case feed: bright red with an exclamation mark. */
+.case-action-entry[data-tone="error"] { align-items: center; border: 2px solid #b30f17; background: #ff2d36; box-shadow: 0 0 0 3px rgb(255 45 54 / .22); animation: case-alert-pop .28s cubic-bezier(.2, .9, .25, 1.3) both; }
+.case-action-entry[data-tone="error"] p { color: #fff; font-weight: 900; }
+.case-alert-mark { width: 28px; height: 28px; display: grid; place-items: center; border-radius: 50%; background: #fff; color: #d0141c; font: 950 1.05rem/1 "Arial Black", Arial, sans-serif; }
+@keyframes case-alert-pop { from { opacity: 0; transform: scale(.94); } to { opacity: 1; transform: scale(1); } }
+@media (max-width: 780px) {
+  /* Phones stack bomb, Mute signs and case feed; let the column scroll. */
+  .game-workspace[data-role="observer"] { overflow-y: auto; }
+  .game-workspace[data-role="observer"] > .deaf-live-pane { min-height: 420px; }
+  .deaf-side { grid-template-rows: auto auto; }
+  .deaf-side > .case-feed { min-height: 300px; }
+}
