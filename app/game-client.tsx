@@ -498,6 +498,48 @@ function SuitcaseBomb({ game, vision, act, busy = false, cursor, onCursorMove }:
     }
     onCursorMove(point);
   }
+  // Short windows squeeze the module boxes. If any control would spill out of
+  // its box, zoom the suitcase contents down just enough for everything to fit.
+  const fitKey = `${game.activeModules.join(",")}|${game.modules.cable?.colors?.length ?? game.modules.cable?.count ?? 0}`;
+  useLayoutEffect(() => {
+    const suitcase = suitcaseRef.current;
+    const frame = suitcase?.parentElement;
+    if (!suitcase || !frame) return;
+    const spills = () => {
+      const clip = frame.getBoundingClientRect();
+      return Array.from(suitcase.querySelectorAll<HTMLElement>(".case-bay")).some((bay) => {
+        const box = bay.getBoundingClientRect();
+        if (box.bottom > clip.bottom + 1) return true;
+        return Array.from(bay.querySelectorAll<HTMLElement>("[data-anchor]")).some((control) => {
+          const rect = control.getBoundingClientRect();
+          return rect.bottom > box.bottom + 1 || rect.right > box.right + 1 || rect.top < box.top - 1;
+        });
+      });
+    };
+    let lastSize = "";
+    const fit = () => {
+      const size = `${frame.clientWidth}x${frame.clientHeight}`;
+      if (size === lastSize) return;
+      suitcase.style.zoom = "";
+      if (spills()) {
+        let fits = 0.4;
+        let tooBig = 1;
+        for (let step = 0; step < 7; step += 1) {
+          const middle = (fits + tooBig) / 2;
+          suitcase.style.zoom = String(middle);
+          if (spills()) tooBig = middle;
+          else fits = middle;
+        }
+        suitcase.style.zoom = String(fits);
+      }
+      lastSize = `${frame.clientWidth}x${frame.clientHeight}`;
+    };
+    fit();
+    const observer = new ResizeObserver(fit);
+    observer.observe(frame);
+    return () => observer.disconnect();
+  }, [fitKey]);
+
   // Place the remote cursor on this screen's copy of the control BLIND is over.
   useLayoutEffect(() => {
     const container = suitcaseRef.current;
@@ -538,7 +580,7 @@ function SuitcaseBomb({ game, vision, act, busy = false, cursor, onCursorMove }:
 }
 
 function MuteSignalStage({ signal }: { signal?: MuteSignal }) {
-  return <div className="mute-signal-stage"><div className="mute-signal-space" aria-live="polite">{signal?.active && <div className="mute-signal-bubble" key={signal.updatedAt}>{signal.symbol}</div>}</div><div className="mute-monkey"><Hand className="mute-hand mute-hand-left" /><span>🙊</span><Hand className="mute-hand mute-hand-right" /></div><small>{signal?.active ? "SIGN RECEIVED" : "WAITING FOR SIGN"}</small></div>;
+  return <div className="mute-signal-stage"><div className="mute-monkey"><Hand className="mute-hand mute-hand-left" /><span>🙊</span><Hand className="mute-hand mute-hand-right" /></div><div className="mute-signal-space" aria-live="polite">{signal?.active ? <div className="mute-signal-bubble" key={signal.updatedAt}>{signal.symbol}</div> : <div className="mute-signal-placeholder" aria-hidden="true">…</div>}</div><small>{signal?.active ? "SIGN RECEIVED" : "WAITING FOR SIGN"}</small></div>;
 }
 
 function ObserverPanel({ game, feed }: { game: PublicGameView; feed: ReactNode }) {
