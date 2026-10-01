@@ -8,10 +8,8 @@
 import {
   activeModules,
   applyModuleAction,
-  applyTutorialAction,
   completedModules,
   createGameState,
-  createTutorialGameState,
   levelDefinition,
   logAction,
   makeId,
@@ -25,7 +23,6 @@ import {
   type GameState,
   type ModuleAction,
   type Role,
-  type TutorialAction,
 } from "./game.ts";
 
 export type RoomStatus = "lobby" | "playing";
@@ -51,7 +48,7 @@ export type EngineData = {
 export type RoomRequest = Record<string, unknown>;
 
 export type HandleResult =
-  | { ok: true; signal?: { symbol: string; at: number }; handoffTo?: string; closeRoom?: boolean }
+  | { ok: true; handoffTo?: string; closeRoom?: boolean }
   | { ok: false; error: string };
 
 export type EngineSnapshot = {
@@ -90,17 +87,6 @@ const MODULE_ACTIONS: ModuleAction[] = [
   "calculator-clear",
   "calculator-enter",
   "piano-key",
-];
-
-const TUTORIAL_ACTIONS: TutorialAction[] = [
-  "begin",
-  "inspect-blind",
-  "observe-light",
-  "deaf-message",
-  "manual-rule",
-  "mute-signal",
-  "practice-error",
-  "solve-cable",
 ];
 
 export function cleanCode(value: unknown) {
@@ -200,16 +186,8 @@ export class RoomEngine {
     const state = this.data.state;
     if (this.data.status !== "playing") return false;
 
-    if (state.phase === "tutorial" && state.tutorial?.completedAt && now >= state.tutorial.completedAt + 4_000) {
-      const next = createGameState(1, "playing", "new", state.chatEnabled, [], state.tutorialEnabled);
-      next.startAt = now + 3_000;
-      resetLog(next, "Tutorial complete. Level 1 armed with normal role restrictions.");
-      this.data.state = next;
-      this.resetReady();
-      return true;
-    }
-
-    if (state.phase === "playing" && state.startAt && now >= state.startAt + state.durationMs) {
+    // Level 0 has no timer (durationMs 0), so it never times out.
+    if (state.phase === "playing" && state.startAt && state.durationMs > 0 && now >= state.startAt + state.durationMs) {
       state.phase = "waiting";
       state.lastResult = "timeout";
       state.startAt = null;
@@ -221,7 +199,17 @@ export class RoomEngine {
     return false;
   }
 
-  // Applies time-based transitions (timeouts, the end of the tutorial).
+  // Records that the Mute player sent a sign (the host watches the live sign
+  // channel and calls this). Returns true when the room should be republished.
+  noteSignal(at: number) {
+    const state = this.data.state;
+    if (!Number.isFinite(at) || at <= (state.lastSignalAt ?? 0)) return false;
+    state.lastSignalAt = at;
+    this.data.version += 1;
+    return true;
+  }
+
+  // Applies time-based transitions (level timeouts).
   tick(now: number) {
     const changed = this.settle(now);
     if (changed) this.data.version += 1;
@@ -248,9 +236,8 @@ export class RoomEngine {
     if (!seat) return fail("That seat no longer exists.");
     if (action === "leave") return this.leave(seat);
     if (action === "message") return this.message(seat, request, now);
-    if (action === "start") return this.start(seat, now);
+    if (action === "start") return this.start(seat);
     if (action === "switch-role") return this.switchRole(seat, request);
-    if (action === "tutorial-action") return this.tutorialAction(seat, request, now);
     if (action === "ready") return this.ready(seat, now);
     if (action === "module") return this.module(seat, request, now);
     return fail("Unknown room action.");
@@ -294,19 +281,16 @@ export class RoomEngine {
     return { ok: true };
   }
 
-  private start(seat: Seat, now: number): HandleResult {
+  private start(seat: Seat): HandleResult {
     if (seat.id !== this.data.hostId) return fail("Only the host can launch the bomb.");
     if (this.data.status !== "lobby") return fail("The campaign has already started.");
     if (this.data.seats.length !== 3 || new Set(this.data.seats.map((candidate) => candidate.role)).size !== 3) {
       return fail("All three roles must be filled.");
     }
     const previous = this.data.state;
-    const state = previous.tutorialEnabled
-      ? createTutorialGameState(previous.chatEnabled)
-      : createGameState(1, "waiting", "new", previous.chatEnabled, [], false);
-    if (state.phase === "tutorial") state.startAt = now;
+    const state = createGameState(previous.tutorialEnabled ? 0 : 1, "waiting", "new", previous.chatEnabled, [], previous.tutorialEnabled);
     resetLog(state, previous.tutorialEnabled
-      ? "Tutorial suitcase opened. Complete the information chain together."
+      ? "Practice round staged. All three monkeys ready up for Level 0."
       : "Campaign staged. All three monkeys must ready up for Level 1.");
     this.data.state = state;
     this.data.status = "playing";
@@ -324,20 +308,6 @@ export class RoomEngine {
     if (other) other.role = seat.role;
     seat.role = targetRole;
     this.resetReady();
-    return { ok: true };
-  }
-
-  private tutorialAction(seat: Seat, request: RoomRequest, now: number): HandleResult {
-    const state = this.data.state;
-    if (this.data.status !== "playing" || state.phase !== "tutorial") return fail("The tutorial is not active.");
-    const tutorialAction = String(request.tutorialAction) as TutorialAction;
-    if (!TUTORIAL_ACTIONS.includes(tutorialAction)) return fail("Unknown tutorial action.");
-    const value = requestValue(request);
-    const result = applyTutorialAction(state, seat.role, tutorialAction, value);
-    if (!result.ok) return fail(result.error ?? "Complete the highlighted step first.");
-    // Keep every timestamp on the shared server clock rather than the host's.
-    if (state.tutorial?.completedAt) state.tutorial.completedAt = now;
-    if (tutorialAction === "mute-signal") return { ok: true, signal: { symbol: String(value ?? ""), at: now } };
     return { ok: true };
   }
 
@@ -368,9 +338,11 @@ export class RoomEngine {
     const moduleAction = String(request.moduleAction) as ModuleAction;
     if (!MODULE_ACTIONS.includes(moduleAction)) return fail("Unknown bomb control.");
 
+    state.lastActionAt = now;
     applyModuleAction(state, moduleAction, requestValue(request));
     const finished = completedModules(state) === activeModules(state).length;
-    if (finished || state.mistakes >= state.maxMistakes) {
+    // The practice round never ends on strikes.
+    if (finished || (state.level > 0 && state.mistakes >= state.maxMistakes)) {
       state.phase = "waiting";
       state.lastResult = finished ? "cleared" : "strikes";
       state.startAt = null;

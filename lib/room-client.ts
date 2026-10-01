@@ -180,6 +180,12 @@ class HostRuntime {
           this.publish();
         }
       }),
+      // Signs travel on a direct channel; note them so every view can show
+      // which step of the relay the team is on.
+      onValue(ref(db, roomPath(this.code, "signal")), (snapshot) => {
+        const value = snapshot.val() as { at?: unknown } | null;
+        if (value && typeof value.at === "number" && this.engine?.noteSignal(value.at)) this.publish();
+      }),
       onChildAdded(ref(db, roomPath(this.code, "inbox")), (snapshot) => {
         const key = snapshot.key;
         const entry = snapshot.val() as { uid?: unknown; payload?: unknown } | null;
@@ -222,7 +228,6 @@ class HostRuntime {
       [`inbox/${key}`]: null,
       ...(uid ? { [`outbox/${uid}/${key}`]: { ok: result.ok, error: result.ok ? "" : result.error, version: engine.data.version } } : {}),
     };
-    if (result.ok && result.signal) extra.signal = result.signal;
     if (result.ok && result.handoffTo) extra["meta/hostUid"] = result.handoffTo;
     this.publish(extra);
     if (result.ok && result.handoffTo) this.stop();

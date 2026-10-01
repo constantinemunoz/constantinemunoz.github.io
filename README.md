@@ -88,9 +88,9 @@ which needs Java) and run the app with `NEXT_PUBLIC_FIREBASE_EMULATOR=1`.
 
 ## Project layout
 
-- `app/game-client.tsx` — start screen, lobby, ready room, the three role views, tutorial, developer mode
+- `app/game-client.tsx` — start screen, lobby, ready room, the three role views, Level 0 coaching, developer mode
 - `app/globals.css` — the complete visual design
-- `lib/game.ts` — module rules, levels, timers, tutorial logic and per-role visibility
+- `lib/game.ts` — module rules, levels (including the Level 0 practice round), timers and per-role visibility
 - `lib/room-engine.ts` — the room referee that runs in the host's browser
 - `lib/room-client.ts` — Firebase connection: create, join, rejoin, leave, host takeover
 - `lib/firebase-config.ts` — the public Firebase web config
