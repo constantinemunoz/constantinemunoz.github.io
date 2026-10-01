@@ -2,18 +2,18 @@ import {
   activeModules,
   ALL_MODULES,
   applyModuleAction,
-  applyTutorialAction,
   CALCULATOR_RULES,
   CABLE_RULES,
   CORE_MODULES,
   completedModules,
   createGameState,
-  createTutorialGameState,
   DIRECTION_RULES,
   LEVELS,
+  levelDefinition,
+  nextLevelAfterClear,
   PIANO_RULES,
+  PRACTICE_CABLE,
   publicStateForRole,
-  ROLES,
   SLIDER_NUMBER_GROUPS,
   SLIDER_RULES,
   SLIDER_TARGET_PATTERNS,
@@ -159,42 +159,19 @@ const pianoDeafView = publicStateForRole(pianoVisibilityState, "observer", "deaf
 assert(!("melody" in pianoBlindView.modules.piano) && !("modeLight" in pianoBlindView.modules.piano), "Piano colors leaked to BLIND");
 assert("melody" in pianoDeafView.modules.piano && !("target" in pianoDeafView.modules.piano), "Piano solution leaked to DEAF or its clues are missing");
 
-const tutorialState = createTutorialGameState(true);
-assert(tutorialState.phase === "tutorial" && tutorialState.tutorialEnabled, "Tutorial room did not enter its shared pre-level phase");
-assert(activeModules(tutorialState).join(",") === "cable", "Tutorial must stage only the practice cable");
-assert(tutorialState.modules.cable.colors.join(",") === "BLUE,RED,GREEN" && tutorialState.modules.cable.light === "RED", "Tutorial practice clues changed");
-const tutorialSequence = [
-  ["operator", "begin"],
-  ["operator", "inspect-blind"],
-  ["observer", "observe-light"],
-  ["observer", "deaf-message"],
-  ["specialist", "manual-rule"],
-  ["specialist", "mute-signal", 1],
-  ["operator", "practice-error", 1],
-  ["operator", "solve-cable", 0],
-];
-for (const [role, action, value] of tutorialSequence) {
-  for (const blockedRole of ROLES.filter((candidate) => action !== "begin" && candidate !== role)) {
-    const blockedStep = tutorialState.tutorial.step;
-    const blockedResult = applyTutorialAction(tutorialState, blockedRole, action, value);
-    assert(!blockedResult.ok && tutorialState.tutorial.step === blockedStep, `Tutorial let ${blockedRole} perform ${role}/${action}`);
-  }
-  const result = applyTutorialAction(tutorialState, role, action, value);
-  assert(result.ok, `Tutorial rejected ${role}/${action}`);
-}
-assert(tutorialState.tutorial.step === 8 && tutorialState.tutorial.completedAt, "Tutorial did not reach completion");
-assert(tutorialState.tutorial.practiceMistakes === 1, "Tutorial error demonstration did not register");
-assert(tutorialState.modules.cable.solved && tutorialState.modules.cable.cut === 0, "Tutorial correct cable did not solve");
-assert(tutorialState.tutorial.feed.some((entry) => entry.role === "observer" && entry.kind === "message" && entry.text.includes("RED LIGHT")), "DEAF tutorial clue did not reach the Case Feed");
-assert(tutorialState.tutorial.feed.some((entry) => entry.role === "specialist" && entry.kind === "signal" && entry.text === "1"), "MUTE tutorial answer did not reach the Case Feed");
-assert(tutorialState.tutorial.feed.some((entry) => entry.role === "operator" && entry.kind === "error"), "BLIND tutorial error did not reach the Case Feed");
-assert(tutorialState.tutorial.feed.at(-1)?.kind === "solved", "Tutorial did not end with the solved event");
-const sharedTutorialView = publicStateForRole(tutorialState, "operator", "blind-id");
-assert(sharedTutorialView.tutorial.cable.light === "RED" && sharedTutorialView.tutorial.cable.colors[0] === "BLUE", "Tutorial-only shared clues are missing");
+// Level 0: the practice round. Fixed cable, no timer, no strikes.
+const practice = createGameState(0, "playing");
+assert(practice.level === 0 && practice.durationMs === 0 && practice.serial === "PRACTICE", "Level 0 is the untimed practice round");
+assert(activeModules(practice).join(",") === "cable", "Level 0 stages only the practice cable");
+assert(practice.modules.cable.colors.join(",") === PRACTICE_CABLE.colors.join(",") && practice.modules.cable.light === PRACTICE_CABLE.light && practice.modules.cable.targetColor === "BLUE", "Practice cable is fixed so the coaching can name it");
+applyModuleAction(practice, "cut-cable", 1);
+assert(practice.mistakes === 0 && practice.actionLog.at(-1).tone === "error" && /No strike/.test(practice.actionLog.at(-1).text), "A wrong cut in Level 0 warns but does not strike");
+applyModuleAction(practice, "cut-cable", 0);
+assert(practice.modules.cable.solved && completedModules(practice) === 1, "The practice cable solves on the blue wire");
+assert(nextLevelAfterClear(0) === 1, "Clearing Level 0 leads to Level 1");
+assert(levelDefinition(42).level === 1, "Unknown levels fall back to Level 1, not the practice round");
+const practiceView = publicStateForRole(practice, "operator", "blind-id");
+assert("lastSignalAt" in practiceView && "lastActionAt" in practiceView, "Views carry the relay timestamps");
+assert(createGameState(1, "playing").serial.startsWith("BN-") && createGameState(1, "playing").durationMs === 150_000, "Level 1 is unchanged");
 
-const blockedTutorial = createTutorialGameState();
-applyTutorialAction(blockedTutorial, "operator", "begin");
-const wrongRole = applyTutorialAction(blockedTutorial, "observer", "inspect-blind");
-assert(!wrongRole.ok && blockedTutorial.tutorial.step === 1, "Wrong role advanced the tutorial");
-
-console.log("Passed 22,000 randomized rounds across all five modules, ten campaign levels, infinite mode, and the synchronized tutorial sequence.");
+console.log("Passed 22,000 randomized rounds across all five modules, the practice round, ten campaign levels, and infinite mode.");

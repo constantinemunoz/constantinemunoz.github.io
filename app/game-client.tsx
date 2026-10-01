@@ -5,6 +5,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, use
 import {
   ArrowDown,
   ArrowLeft,
+  ArrowLeftRight,
   ArrowRight,
   ArrowUp,
   Banana,
@@ -59,18 +60,17 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import {
   activeModules,
   applyModuleAction,
-  applyTutorialAction,
   CABLE_RULES,
   CALCULATOR_RULES,
   completedModules,
   createGameState,
-  createTutorialGameState,
   DIRECTION_RULES,
   LEVELS,
   levelDefinition,
   makeId,
   nextLevelAfterClear,
   PIANO_RULES,
+  PRACTICE_CABLE,
   publicStateForRole,
   resetLog,
   ROLE_META,
@@ -85,8 +85,6 @@ import {
   type ModuleKey,
   type Role,
   type SliderTest,
-  type TutorialAction,
-  type TutorialFeedEntry,
 } from "@/lib/game";
 import { getLearnedTips, getServerLearnedTips, markTipsLearned, subscribeLearnedTips } from "@/lib/coach-store";
 import {
@@ -110,19 +108,12 @@ type DirectionView = { light?: LightColor; braille?: number; pressed?: Direction
 type CalculatorView = { expression?: string; entered?: string; enteredLength?: number; stage: "entry" | "confirm"; light?: LightColor | null; pressed?: number | null; solved: boolean };
 type PianoView = { modeLight?: LightColor; melody?: LightColor[]; pressedCount?: number; solved: boolean };
 type ChatMessageView = { id: string; senderRole: Role; senderName: string; text: string; sentAt: number; seq?: number };
-type TutorialView = {
-  step: number;
-  practiceMistakes: number;
-  completedAt: number | null;
-  feed: TutorialFeedEntry[];
-  cable: { count: number; colors: LightColor[]; light: LightColor; cut: number | null; solved: boolean };
-};
 type PublicGameView = {
   serial: string | null;
   level: number;
   levelTitle: string;
   activeModules: ModuleKey[];
-  phase: "waiting" | "playing" | "tutorial";
+  phase: "waiting" | "playing";
   lastResult: "new" | "cleared" | "timeout" | "strikes";
   startAt: number | null;
   durationMs: number;
@@ -133,7 +124,8 @@ type PublicGameView = {
   moduleCount: number;
   chatEnabled: boolean;
   tutorialEnabled: boolean;
-  tutorial: TutorialView | null;
+  lastSignalAt: number | null;
+  lastActionAt: number | null;
   messages: ChatMessageView[];
   modules: { cable: CableView; slider: SliderView; direction: DirectionView; calculator: CalculatorView; piano: PianoView };
   operatorCursor?: CursorPoint;
@@ -254,7 +246,7 @@ function TutorialButton({ className = "", label = "How to play" }: { className?:
 }
 
 function StartScreen({ onEnter, onTest, notice }: { onEnter: (connection: RoomConnection, data: RoomSnapshot) => void; onTest: () => void; notice?: string }) {
-  const [mode, setMode] = useState("create");
+  const [mode, setMode] = useState("join");
   const [name, setName] = useState("");
   const [code, setCode] = useState("");
   const [role, setRole] = useState<Role>("operator");
@@ -314,12 +306,10 @@ function StartScreen({ onEnter, onTest, notice }: { onEnter: (connection: RoomCo
           <Input id="player-name" value={name} onChange={(event) => setName(event.target.value.slice(0, 20))} placeholder="Constantine" className="game-input" autoComplete="nickname" />
           <span className="field-label">Choose your assignment</span>
           <RoleChoice value={role} onChange={setRole} />
-          {mode === "create" && <div className="room-option-stack"><label className="chat-mode-toggle"><span><b>OPTIONAL TEXT CHAT</b><small>{chatEnabled ? "BLIND and DEAF can type during the game." : "Role signals stay limited to the existing tools."}</small></span><Switch checked={chatEnabled} onCheckedChange={setChatEnabled} aria-label="Enable text chat" /></label><label className="chat-mode-toggle tutorial-mode-toggle"><span><b>TUTORIAL MODE</b><small>Learn how to play before Level 1</small></span><Switch checked={tutorialEnabled} onCheckedChange={setTutorialEnabled} aria-label="Tutorial Mode — Learn how to play before Level 1" /></label></div>}
+          {mode === "create" && <div className="room-option-stack"><label className="chat-mode-toggle"><span><b>OPTIONAL TEXT CHAT</b><small>{chatEnabled ? "BLIND and DEAF can type during the game." : "Role signals stay limited to the existing tools."}</small></span><Switch checked={chatEnabled} onCheckedChange={setChatEnabled} aria-label="Enable text chat" /></label><label className="chat-mode-toggle tutorial-mode-toggle"><span><b>LEVEL 0 · PRACTICE ROUND</b><small>{tutorialEnabled ? "One untimed cable round to learn the relay, then Level 1." : "Skip practice and start at Level 1."}</small></span><Switch checked={tutorialEnabled} onCheckedChange={setTutorialEnabled} aria-label="Level 0 practice round before Level 1" /></label></div>}
           {error && <p className="form-error" role="alert">{error}</p>}
           <Button onClick={submit} disabled={busy} className="launch-button">{busy ? "Opening case…" : mode === "create" ? "Create squad" : "Claim seat"}<span aria-hidden="true">→</span></Button>
-          <TutorialButton className="tutorial-entry-button" label="Read how to play" />
-          <div className="test-entry-divider"><span>OR TEST IT SOLO</span></div>
-          <Button onClick={onTest} variant="outline" className="test-entry-button"><Wrench /> Open developer mode</Button>
+          <div className="entry-links"><TutorialButton className="rules-link" label="Rules" /><button type="button" className="text-link" onClick={onTest}><Wrench /> Try it alone</button></div>
         </div>
       </section>
       <footer className="start-footer"><span>Unofficial browser tribute. Not affiliated with Lefto Studio or TARK.</span><span>Built for three separate tabs or devices.</span></footer>
@@ -327,10 +317,40 @@ function StartScreen({ onEnter, onTest, notice }: { onEnter: (connection: RoomCo
   );
 }
 
-function RoleChip({ player }: { player?: Player }) {
-  if (!player) return <div className="seat-card empty-seat"><span>+</span><b>OPEN SEAT</b></div>;
-  const meta = ROLE_META[player.role];
-  return <div className="seat-card"><span className="seat-monkey">{meta.monkey}</span><div><small>{meta.short}</small><b>{player.name}</b></div><span className={player.online ? "presence online" : "presence"} /></div>;
+function RoleChip({ player, role, you }: { player?: Player; role: Role; you: boolean }) {
+  const meta = ROLE_META[role];
+  if (!player) return <div className="seat-card empty-seat"><span className="seat-monkey" aria-hidden="true">{meta.monkey}</span><div><small>{meta.short}</small><b>OPEN SEAT</b><i>Waiting for a friend</i></div><span className="seat-plus" aria-hidden="true">+</span></div>;
+  return <div className="seat-card" data-you={you}><span className="seat-monkey" aria-hidden="true">{meta.monkey}</span><div><small>{meta.short} · {meta.name}</small><b>{player.name}</b>{you && <i>That&apos;s you</i>}</div><span className={player.online ? "presence online" : "presence"} aria-label={player.online ? "online" : "away"} /></div>;
+}
+
+const DEMO_STEPS: Array<{ who: Role; title: string; says: string; sign?: string }> = [
+  { who: "observer", title: "DEAF LOOKS", says: "Red light. Three cables: blue, red, green." },
+  { who: "specialist", title: "MUTE LOOKS IT UP", says: "3 cables + red light = blue. Blue is first, so…", sign: "1" },
+  { who: "observer", title: "DEAF PASSES IT ON", says: "MUTE says 1. Cut the top cable!" },
+  { who: "operator", title: "BLIND CUTS", says: "Top cable… snip. Defused!" },
+];
+
+function DemoBomb({ colored, cut }: { colored: boolean; cut: boolean }) {
+  return <div className="demo-bomb" data-colored={colored} data-cut={cut}><i className="demo-light" /><span data-wire="BLUE" data-cut={cut} /><span data-wire="RED" /><span data-wire="GREEN" />{cut && <b>DEFUSED</b>}</div>;
+}
+
+function DemoManual() {
+  return <div className="demo-manual"><div className="demo-manual-head"><i /><Light color="RED" /><Light color="YELLOW" /><Light color="GREEN" /><Light color="BLUE" /></div><div className="demo-manual-row" data-hit="true"><CableCountDiagram count={3} /><span data-hit="true"><ManualWire color="BLUE" /></span><span><ManualWire color="RED" /></span><span><ManualWire color="YELLOW" /></span><span><ManualWire color="GREEN" /></span></div><div className="demo-manual-row"><CableCountDiagram count={4} /><span><ManualWire color="GREEN" /></span><span><ManualWire color="BLUE" /></span><span><ManualWire color="RED" /></span><span><ManualWire color="YELLOW" /></span></div></div>;
+}
+
+// A looping four-panel strip of one round, shown while the lobby waits.
+function RelayDemo() {
+  const [step, setStep] = useState(0);
+  useEffect(() => {
+    const timer = window.setInterval(() => setStep((current) => (current + 1) % DEMO_STEPS.length), 3_400);
+    return () => window.clearInterval(timer);
+  }, []);
+  const current = DEMO_STEPS[step];
+  return <section className="relay-demo" aria-label="How one round works"><header><b>HOW ONE ROUND WORKS</b><span>Nothing to read. Just watch.</span></header><div className="relay-demo-stage" data-step={step}><div className="relay-demo-visual">{step === 1 ? <DemoManual /> : <DemoBomb colored={step !== 3} cut={step === 3} />}</div><div className="relay-demo-actor" data-role={current.who}><span aria-hidden="true">{ROLE_META[current.who].monkey}</span><b>{ROLE_META[current.who].short}</b></div><div className="relay-demo-bubble" key={step} data-kind={current.sign ? "sign" : "speech"}><p>{current.says}</p>{current.sign && <strong aria-label={`Sign ${current.sign}`}>{current.sign}</strong>}</div></div><ol className="relay-demo-steps">{DEMO_STEPS.map((item, index) => <li key={item.title} data-active={index === step} data-done={index < step}><span aria-hidden="true">{ROLE_META[item.who].monkey}</span>{item.title}</li>)}</ol></section>;
+}
+
+function SetupChecklist() {
+  return <section className="setup-checklist" aria-label="Before you start"><b>BEFORE YOU START</b><ul><li><Mic aria-hidden="true" /><span>Get all three of you on a voice call.</span></li><li><EarOff aria-hidden="true" /><span><strong>DEAF</strong> turns their sound off and reads the screen instead.</span></li><li><MicOff aria-hidden="true" /><span><strong>MUTE</strong> mutes their mic and talks only with signs.</span></li></ul></section>;
 }
 
 function Lobby({ data, onData, onTest, onLeave, banner }: { data: RoomSnapshot; onData: (data: RoomSnapshot) => void; onTest: () => void; onLeave: () => void; banner?: string }) {
@@ -339,12 +359,13 @@ function Lobby({ data, onData, onTest, onLeave, banner }: { data: RoomSnapshot; 
   const [error, setError] = useState("");
   const slots = ROLES.map((role) => data.room.players.find((player) => player.role === role));
   const full = data.room.players.length === 3;
+  const missing = 3 - data.room.players.length;
 
   async function copyCode() {
     try {
       await navigator.clipboard.writeText(data.room.code);
       setCopied(true);
-      window.setTimeout(() => setCopied(false), 1400);
+      window.setTimeout(() => setCopied(false), 1600);
     } catch { /* Clipboard access can be denied; the code stays visible. */ }
   }
   async function start() {
@@ -355,16 +376,16 @@ function Lobby({ data, onData, onTest, onLeave, banner }: { data: RoomSnapshot; 
   }
   return (
     <main className="lobby-shell"><div className="lobby-card">
-      <div className="lobby-topline"><Radio /> ROOM OPEN <span>WAITING FOR SQUAD</span></div>
-      <div className="room-code-block"><small>ROOM CODE</small><button onClick={copyCode}>{data.room.code} {copied ? <Check /> : <Copy />}</button></div>
-      <div className="seat-grid">{slots.map((player, index) => <RoleChip player={player} key={ROLES[index]} />)}</div>
-      <div className="lobby-option-grid"><div className="lobby-chat-status" data-enabled={data.room.game.chatEnabled}><MessageCircle /><b>TEXT CHAT {data.room.game.chatEnabled ? "ON" : "OFF"}</b><span>{data.room.game.chatEnabled ? "BLIND + DEAF can type" : "No typed messages this run"}</span></div><div className="lobby-chat-status tutorial-lobby-status" data-enabled={data.room.game.tutorialEnabled}><CircleHelp /><b>TUTORIAL {data.room.game.tutorialEnabled ? "ON" : "OFF"}</b><span>{data.room.game.tutorialEnabled ? "Before Level 1" : "Start normally"}</span></div></div>
+      <div className="lobby-topline"><Radio /> ROOM OPEN <span>{full ? "SQUAD COMPLETE" : `WAITING FOR ${missing} MORE`}</span></div>
+      <div className="room-code-block"><small>ROOM CODE · SEND IT TO YOUR TWO FRIENDS</small><button onClick={copyCode} aria-label="Copy room code">{data.room.code} {copied ? <Check /> : <Copy />}</button><em>{copied ? "Copied!" : "They open the site, pick Join room, and type it in."}</em></div>
+      <div className="seat-grid">{slots.map((player, index) => <RoleChip player={player} role={ROLES[index]} you={player?.role === data.player.role} key={ROLES[index]} />)}</div>
+      <RelayDemo />
+      <SetupChecklist />
+      <div className="lobby-option-grid"><div className="lobby-chat-status" data-enabled={data.room.game.chatEnabled}><MessageCircle /><b>TEXT CHAT {data.room.game.chatEnabled ? "ON" : "OFF"}</b><span>{data.room.game.chatEnabled ? "BLIND + DEAF can type" : "Voice only"}</span></div><div className="lobby-chat-status tutorial-lobby-status" data-enabled={data.room.game.tutorialEnabled}><CircleHelp /><b>LEVEL 0 {data.room.game.tutorialEnabled ? "ON" : "OFF"}</b><span>{data.room.game.tutorialEnabled ? "Practice round first" : "Straight to Level 1"}</span></div></div>
       {banner && <p className="room-notice" role="status">{banner}</p>}
       {error && <p className="form-error" role="alert">{error}</p>}
-      {data.room.isHost ? <Button className="launch-button" disabled={!full || busy} onClick={start}><Play /> {busy ? "Staging…" : full ? data.room.game.tutorialEnabled ? "Start interactive tutorial" : "Open Level 1 ready room" : `Waiting for ${3 - data.room.players.length}`}</Button> : <div className="waiting-bar"><span /> Host opens the campaign when every role is filled.</div>}
-      <TutorialButton className="tutorial-lobby-button" label="How to play" />
-      <Button onClick={onTest} variant="outline" className="test-entry-button lobby-test-button"><Wrench /> Test all levels alone</Button>
-      <Button onClick={onLeave} variant="outline" className="test-entry-button lobby-leave-button"><LogOut /> Leave room</Button>
+      {data.room.isHost ? <Button className="launch-button" disabled={!full || busy} onClick={start}><Play /> {busy ? "Staging…" : full ? data.room.game.tutorialEnabled ? "Start Level 0 practice" : "Open Level 1 ready room" : `Waiting for ${missing} more player${missing === 1 ? "" : "s"}`}</Button> : <div className="waiting-bar"><span /> {full ? "The host starts the game." : "The host starts once every seat is filled."}</div>}
+      <div className="entry-links lobby-links"><TutorialButton className="rules-link" label="Rules" /><button type="button" className="text-link" onClick={onTest}><Wrench /> Test alone</button><button type="button" className="text-link" onClick={onLeave}><LogOut /> Leave room</button></div>
     </div></main>
   );
 }
@@ -683,8 +704,8 @@ function ManualSwitch({ up }: { up: boolean }) {
   return <span className={up ? "mini-switch up" : "mini-switch"}><i /></span>;
 }
 
-function CableManual() {
-  return <section className="manual-page" data-module="cable"><div className="manual-page-title"><Scissors /></div><ManualSteps steps={[<span className="visual-pair" key="count"><CableCountDiagram count={3} /><span>/</span><CableCountDiagram count={4} /></span>, <span className="visual-light-row" key="lights">{LIGHT_COLORS.map((color) => <Light key={color} color={color} />)}</span>, <span className="visual-pair" key="cut"><Scissors /><ManualWire color="BLUE" /></span>]} /><div className="manual-rule-table cable-rule-table"><ManualLightHeader lead={<span />} />{([3, 4] as const).map((count) => <div className="manual-table-row" key={count}><strong className="manual-row-label"><CableCountDiagram count={count} /></strong>{LIGHT_COLORS.map((light) => <span className="cable-answer" key={light}><ManualWire color={CABLE_RULES[count][light]} /></span>)}</div>)}</div></section>;
+function CableManual({ highlight }: { highlight?: { count: 3 | 4; light: LightColor } }) {
+  return <section className="manual-page" data-module="cable"><div className="manual-page-title"><Scissors /></div><ManualSteps steps={[<span className="visual-pair" key="count"><CableCountDiagram count={3} /><span>/</span><CableCountDiagram count={4} /></span>, <span className="visual-light-row" key="lights">{LIGHT_COLORS.map((color) => <Light key={color} color={color} />)}</span>, <span className="visual-pair" key="cut"><Scissors /><ManualWire color="BLUE" /></span>]} /><div className="manual-rule-table cable-rule-table"><ManualLightHeader lead={<span />} />{([3, 4] as const).map((count) => <div className="manual-table-row" key={count} data-coach-row={highlight?.count === count}><strong className="manual-row-label"><CableCountDiagram count={count} /></strong>{LIGHT_COLORS.map((light) => <span className="cable-answer" key={light} data-coach-hit={highlight?.count === count && highlight.light === light}><ManualWire color={CABLE_RULES[count][light]} /></span>)}</div>)}</div></section>;
 }
 
 function DirectionManual() {
@@ -725,9 +746,9 @@ function PianoManual() {
   return <section className="manual-page wide-manual-page" data-module="piano"><div className="manual-page-title"><Piano /></div><ManualSteps steps={[<span className="visual-pair" key="mode"><Piano /><Light color={mode} /></span>, <span className="visual-light-row" key="melody">{LIGHT_COLORS.map((color) => <Light key={color} color={color} />)}</span>, <span className="manual-piano-sequence" key="keys">{[1, 3, 5, 7].map((key) => <span key={key}><BrailleCell value={key} compact /><b>{key}</b></span>)}</span>]} /><ManualRulePager row={row} count={LIGHT_COLORS.length} onChange={setRow} /><div className="piano-rule-focus"><div className="piano-rule-mode"><Piano /><Light color={mode} /></div><div className="piano-rule-grid">{LIGHT_COLORS.map((color) => { const key = PIANO_RULES[mode][color]; return <div key={color}><Light color={color} /><ArrowRight /><span><BrailleCell value={key} compact /><b>{key}</b></span></div>; })}</div></div></section>;
 }
 
-function SpecialistPanel({ game }: { game: PublicGameView }) {
+function SpecialistPanel({ game, practice = false }: { game: PublicGameView; practice?: boolean }) {
   const pages = [
-    { key: "cable" as const, icon: Scissors, component: <CableManual /> },
+    { key: "cable" as const, icon: Scissors, component: <CableManual highlight={practice ? { count: PRACTICE_CABLE.count, light: PRACTICE_CABLE.light } : undefined} /> },
     { key: "slider" as const, icon: SlidersVertical, component: <SliderManual /> },
     { key: "direction" as const, icon: ArrowUp, component: <DirectionManual /> },
     { key: "calculator" as const, icon: Calculator, component: <CalculatorManual /> },
@@ -740,97 +761,32 @@ function SpecialistPanel({ game }: { game: PublicGameView }) {
   return <div className="manual-book"><header><div className="manual-header-symbols"><BookOpen /><b>{game.level}</b><span>·</span><PageIcon /><b>{page + 1}/{pages.length}</b></div></header><div className="manual-pages">{pages[page].component}</div><footer className="manual-pagination"><button type="button" onClick={() => setPage((current) => Math.max(0, current - 1))} disabled={page === 0} aria-label="Previous manual page"><ChevronLeft /></button><div aria-label={`Manual page ${page + 1} of ${pages.length}`}>{pages.map((manualPage, index) => { const Icon = manualPage.icon; return <button type="button" key={manualPage.key} data-active={index === page} data-needed={game.activeModules.includes(manualPage.key)} onClick={() => setPage(index)} aria-label={`Open manual page ${index + 1}`}><Icon /><span>{index + 1}</span></button>; })}</div><button type="button" onClick={() => setPage((current) => Math.min(pages.length - 1, current + 1))} disabled={page === pages.length - 1} aria-label="Next manual page"><ChevronRight /></button></footer></div>;
 }
 
-const TUTORIAL_COACH = [
-  { role: null, title: "LOOK AT ALL 3 BOXES", text: "Tutorial only: everybody can see all three jobs. In the real game, you only see your own job." },
-  { role: "operator" as Role, title: "BLIND: LOOK AT THE BLACK CASE", text: "BLIND can click the suitcase and count 3 cables. BLIND cannot see their colors or the light color." },
-  { role: "observer" as Role, title: "DEAF: FIND THE RED LIGHT", text: "DEAF sees the missing color clue. Click the huge button with the red light." },
-  { role: "observer" as Role, title: "DEAF: SEND THE CLUE", text: "Tell the team: RED LIGHT + 3 CABLES. The clue appears in the Case Feed." },
-  { role: "specialist" as Role, title: "MUTE: FIND THE MATCHING PICTURE", text: "In the manual, match 3 cables + red light. The picture says to cut the blue cable." },
-  { role: "specialist" as Role, title: "MUTE: SEND THE ANSWER", text: "The blue cable is first. Send the number 1 to the team." },
-  { role: "operator" as Role, title: "BLIND: LEARN WHAT A MISTAKE LOOKS LIKE", text: "For practice, click the middle cable. Everyone sees the error in the Case Feed." },
-  { role: "operator" as Role, title: "BLIND: CUT THE CORRECT CABLE", text: "MUTE sent 1. Click the top cable. The diagonal gap means it is cut." },
-] as const;
-
-function TutorialCoachAction({ step, disabled, onAction }: { step: number; disabled: boolean; onAction: (action: TutorialAction, value?: number | string) => void }) {
-  const run = () => {
-    if (step === 0) onAction("begin");
-    if (step === 1) onAction("inspect-blind");
-    if (step === 2) onAction("observe-light");
-    if (step === 3) onAction("deaf-message");
-    if (step === 4) onAction("manual-rule");
-    if (step === 5) onAction("mute-signal", 1);
-    if (step === 6) onAction("practice-error", 1);
-    if (step === 7) onAction("solve-cable", 0);
-  };
-  const content = [
-    { label: "START THE PRACTICE", icon: <Play /> },
-    { label: "SHOW WHAT BLIND CAN SEE", icon: <Eye /> },
-    { label: "CLICK THE RED LIGHT", icon: <Light color="RED" /> },
-    { label: "SEND: RED LIGHT + 3 CABLES", icon: <Send /> },
-    { label: "CHOOSE THE BLUE-WIRE PICTURE", icon: <Scissors /> },
-    { label: "SEND THE NUMBER 1", icon: <span className="tutorial-number-icon">1</span> },
-    { label: "CUT THE MIDDLE CABLE", icon: <TriangleAlert /> },
-    { label: "CUT THE TOP CABLE", icon: <Check /> },
-  ][step];
-  if (!content) return null;
-  return <Button className="tutorial-next-action" disabled={disabled} onClick={run}><span className="tutorial-click-here"><MousePointer2 /> CLICK HERE</span><span className="tutorial-next-action-label">{content.icon}<b>{content.label}</b></span></Button>;
-}
-
-function TutorialManualRule({ active, solved, disabled, onChoose }: { active: boolean; solved: boolean; disabled: boolean; onChoose: () => void }) {
-  return <div className="tutorial-manual-sheet" data-active={active} data-solved={solved}><div className="tutorial-manual-title"><Scissors /></div><div className="tutorial-manual-lookup"><CableCountDiagram count={3} /><span>+</span><Light color="RED" /><ArrowRight /></div><button type="button" onClick={onChoose} disabled={disabled} aria-label="Choose the three cable red light rule"><ManualWire color="BLUE" /><Scissors /></button><div className="tutorial-manual-other" aria-hidden="true"><CableCountDiagram count={4} /><Light color="YELLOW" /><ManualWire color="BLUE" /></div></div>;
-}
-
-function TutorialFeed({ entries, practiceMistakes }: { entries: TutorialFeedEntry[]; practiceMistakes: number }) {
-  const streamRef = useRef<HTMLDivElement>(null);
-  const newest = entries.at(-1)?.id;
-  useEffect(() => { if (streamRef.current) streamRef.current.scrollTop = streamRef.current.scrollHeight; }, [newest]);
-  return <aside className="tutorial-case-feed"><header><Radio /><b>CASE FEED</b><span><MessageCircle /> MESSAGES + EVENTS</span></header><div ref={streamRef}>{entries.map((entry) => <article key={entry.id} data-kind={entry.kind} data-role={entry.role ?? "system"}><span>{entry.role ? ROLE_META[entry.role].monkey : entry.kind === "error" ? "!" : entry.kind === "solved" ? "✓" : "●"}</span><p>{entry.text}</p></article>)}</div><footer><ShieldAlert /><span>{practiceMistakes}/3</span><small>In real rounds, errors show in everyone&apos;s Case Feed.</small></footer></aside>;
-}
-
-function TutorialExperience({ game, role, players, busy, onAction, onCursorMove }: { game: PublicGameView; role: Role; players: Player[]; busy: boolean; onAction: (action: TutorialAction, value?: number | string) => void; onCursorMove?: (point: CursorPoint) => void }) {
-  const tutorial = game.tutorial;
-  if (!tutorial) return null;
-  const step = tutorial.step;
-  const coach = TUTORIAL_COACH[Math.min(step, TUTORIAL_COACH.length - 1)];
-  const requiredRole = step < TUTORIAL_COACH.length ? coach.role : null;
-  const allowed = !requiredRole || requiredRole === role;
-  const requiredPlayer = requiredRole ? players.find((player) => player.role === requiredRole) : null;
-  const tutorialGame: PublicGameView = {
-    ...game,
-    serial: "TRAINING",
-    activeModules: ["cable"],
-    completed: tutorial.cable.solved ? 1 : 0,
-    moduleCount: 1,
-    modules: { ...game.modules, cable: tutorial.cable },
-  };
-  const blindCableAction = (_action: ModuleAction, value?: number | string) => {
-    if (step === 6) onAction("practice-error", value);
-    if (step === 7) onAction("solve-cable", value);
-  };
-  const loopStage = step <= 2 ? 0 : step === 3 ? 1 : step === 4 ? 2 : step === 5 ? 3 : 4;
-
-  if (step >= 8) return <section className="tutorial-complete" role="status"><div><span>🍌</span><small>OBSERVE → COMMUNICATE → CHECK MANUAL → COMMUNICATE ANSWER → OPERATE</small><h2>TUTORIAL COMPLETE</h2><p>You now know the information chain. Work together and defuse the suitcase.</p><b>LEVEL 1 STARTING…</b></div></section>;
-
-  return <section className="interactive-tutorial" data-step={step}>
-    <header className="tutorial-coach-card"><div className="tutorial-coach-copy"><small>STEP {step + 1} OF 8</small><h2>{coach.title}</h2><p>{coach.text}</p></div><div className="tutorial-coach-action" data-your-turn={allowed}>{requiredRole ? <span>{allowed ? `YOUR TURN — YOU ARE ${ROLE_META[requiredRole].short}` : `${requiredPlayer?.name ?? ROLE_META[requiredRole].short}'S TURN — ${ROLE_META[requiredRole].short}`}</span> : <span>ANY PLAYER CAN START</span>}<TutorialCoachAction step={step} disabled={busy || !allowed} onAction={onAction} />{!allowed && requiredRole && <small>Wait here. {requiredPlayer?.name ?? `The ${ROLE_META[requiredRole].short} player`} must click the big button.</small>}</div></header>
-    <div className="tutorial-role-grid">
-      <section className="tutorial-role-panel blind-tutorial-panel" data-focus={requiredRole === "operator"}><header><span>🙈</span><div><b>BLIND — OPERATOR</b><small>CLICKS THE CASE · COLORS HIDDEN</small></div>{requiredRole === "operator" && <strong>DO THIS NOW</strong>}</header><div className="tutorial-role-body tutorial-blind-bomb" data-cable-step={step}><SuitcaseBomb game={tutorialGame} vision="blind" act={allowed && (step === 6 || step === 7) ? blindCableAction : undefined} busy={busy} onCursorMove={role === "operator" ? onCursorMove : undefined} />{step === 6 && <div className="tutorial-wire-pointer tutorial-wire-pointer-middle"><ArrowLeft /><b>MIDDLE</b></div>}{step === 7 && <div className="tutorial-wire-pointer tutorial-wire-pointer-top"><ArrowLeft /><b>TOP</b></div>}</div></section>
-      <section className="tutorial-role-panel deaf-tutorial-panel" data-focus={requiredRole === "observer"}><header><span>🙉</span><div><b>DEAF — OBSERVER</b><small>SEES COLORS + CURSOR · NO MANUAL</small></div>{requiredRole === "observer" && <strong>DO THIS NOW</strong>}</header><div className="tutorial-role-body tutorial-deaf-bomb"><SuitcaseBomb game={tutorialGame} vision="color" cursor={game.operatorCursor} />{step === 2 && <div className="tutorial-light-target" aria-hidden="true"><ArrowDown /><Light color="RED" /><b>RED LIGHT</b></div>}{step === 3 && <div className="tutorial-deaf-message" aria-hidden="true"><Send /><b>RED + 3</b></div>}</div></section>
-      <section className="tutorial-role-panel mute-tutorial-panel" data-focus={requiredRole === "specialist"}><header><span>🙊</span><div><b>MUTE — MANUAL</b><small>READS PICTURES · BOMB HIDDEN</small></div>{requiredRole === "specialist" && <strong>DO THIS NOW</strong>}</header><div className="tutorial-role-body"><TutorialManualRule active={step === 4} solved={step > 4} disabled={busy || !allowed || step !== 4} onChoose={() => onAction("manual-rule")} /><div className="tutorial-sign-board" data-active={step === 5}><div className="tutorial-sign-sample">{step > 5 ? "1" : "?"}</div><div><button type="button" disabled={busy || !allowed || step !== 5} onClick={() => onAction("mute-signal", 1)}>1</button>{["👍", "👎", "🔁"].map((symbol) => <button type="button" key={symbol} disabled aria-label={`${symbol} sign example`}>{symbol}</button>)}</div><small>0–10 · 👍 👎 🔁 👆 👇 👈 👉</small></div></div></section>
-    </div>
-    <div className="tutorial-lower"><TutorialFeed entries={tutorial.feed} practiceMistakes={tutorial.practiceMistakes} /><div className="tutorial-chain" aria-label="Core gameplay information chain">{["OBSERVE", "COMMUNICATE", "CHECK MANUAL", "COMMUNICATE ANSWER", "OPERATE"].map((label, index) => <div key={label} data-active={index === loopStage}><span>{index === 0 ? "🙉" : index === 2 || index === 3 ? "🙊" : index === 4 ? "🙈" : "💬"}</span><b>{label}</b>{index < 4 && <ArrowRight />}</div>)}</div></div>
-  </section>;
-}
-
 function RoundWaitingRoom({ data, onReady, onSwitchRole, busy, developer }: { data: RoomSnapshot; onReady: () => void; onSwitchRole: (role: Role) => void; busy: boolean; developer?: boolean }) {
   const game = data.room.game;
-  const retry = game.lastResult === "timeout" || game.lastResult === "strikes" || game.lastResult === "new";
+  const role = data.player.role;
+  const meta = ROLE_META[role];
   const nextLevel = game.lastResult === "cleared" ? nextLevelAfterClear(game.level) : game.level;
   const next = levelDefinition(nextLevel);
-  const self = data.room.players.find((player) => player.role === data.player.role);
-  const heading = game.lastResult === "timeout" ? "TIME EXPIRED" : game.lastResult === "strikes" ? "THREE STRIKES" : game.lastResult === "cleared" ? (game.level === 10 ? "CAMPAIGN CLEAR" : game.level === 11 ? "INFINITE CASE CLEAR" : `LEVEL ${game.level} CLEAR`) : "CAMPAIGN READY";
+  const self = data.room.players.find((player) => player.role === role);
+  // The first ready room of a campaign briefs each player on their role.
+  const briefing = game.lastResult === "new" && nextLevel <= 1;
+  const retry = game.lastResult === "timeout" || game.lastResult === "strikes";
+  const heading = game.lastResult === "timeout" ? "TIME EXPIRED" : game.lastResult === "strikes" ? "THREE STRIKES" : game.lastResult === "cleared" ? (game.level === 0 ? "PRACTICE DONE" : game.level === 10 ? "CAMPAIGN CLEAR" : game.level === 11 ? "INFINITE CASE CLEAR" : `LEVEL ${game.level} CLEAR`) : "CAMPAIGN READY";
   const levelLabel = next.level === 11 ? "∞" : String(next.level);
-  return <section className="round-waiting-room"><div className="waiting-result" data-result={game.lastResult}><span>{game.lastResult === "cleared" ? "🍌" : game.lastResult === "timeout" ? "⏱" : game.lastResult === "strikes" ? "💥" : "💣"}</span><small>{retry ? "NEXT ATTEMPT" : "NEXT LEVEL"}</small><h2>{heading}</h2></div><div className="next-level-card"><div><small>LEVEL {levelLabel} · {formatTime(next.durationMs)}</small><h3>{next.title}</h3></div><div className="next-modules">{next.modules.map((module) => { const MetaIcon = MODULE_META[module].icon; return <span key={module}><MetaIcon />{MODULE_META[module].label}</span>; })}{Boolean(next.randomCount) && <span className="random-module-chip"><Shuffle />{next.randomCount} RANDOM</span>}</div></div><div className="role-switch-panel"><div className="role-switch-note"><b>CHOOSE YOUR ROLE</b><span>Select another seat to swap. A swap clears everyone&apos;s READY.</span></div><div className="ready-seat-grid">{ROLES.map((role) => { const player = data.room.players.find((candidate) => candidate.role === role); const current = role === data.player.role; return <button type="button" key={role} data-ready={player?.ready} data-current={current} disabled={busy || current} onClick={() => onSwitchRole(role)} aria-label={current ? `You are ${ROLE_META[role].name}` : `Swap with ${player?.name ?? ROLE_META[role].name}`}><span>{ROLE_META[role].monkey}</span><div><small>{ROLE_META[role].short}</small><b>{player?.name ?? "OPEN"}</b></div><strong>{current ? "YOU" : player?.ready ? "READY · SWAP" : "SWAP"}</strong></button>; })}</div></div><div className="waiting-actions"><TutorialButton className="waiting-tutorial-button" label="How to play" /><Button className="ready-button" disabled={busy || (!developer && self?.ready)} onClick={onReady}>{busy ? "UPDATING…" : developer ? "READY ALL & START" : self?.ready ? `WAITING FOR ${3 - data.room.readyCount}` : "I'M READY"}<Play /></Button></div><p>The timer starts only when all three monkeys are ready.</p></section>;
+  const timeLabel = next.level === 0 ? "NO TIMER · NO STRIKES" : formatTime(next.durationMs);
+  const readyLabel = busy ? "UPDATING…" : developer ? "READY ALL & START" : self?.ready ? `WAITING FOR ${3 - data.room.readyCount}` : briefing ? "GOT IT, I'M READY" : "I'M READY";
+  return <section className="round-waiting-room" data-briefing={briefing}>
+    {briefing
+      ? <div className="role-briefing" data-role={role}><small>YOUR JOB THIS GAME</small><span className="role-briefing-monkey" aria-hidden="true">{meta.monkey}</span><h2>{meta.short}</h2><p>{ROLE_JOBS[role]}</p><RoleSenses role={role} /></div>
+      : <div className="waiting-result" data-result={game.lastResult}><span>{game.lastResult === "cleared" ? "🍌" : game.lastResult === "timeout" ? "⏱" : game.lastResult === "strikes" ? "💥" : "💣"}</span><small>{retry ? "TRY AGAIN" : "NEXT UP"}</small><h2>{heading}</h2></div>}
+    <div className="next-level-card"><div><small>{briefing ? "FIRST UP" : "NEXT UP"} · LEVEL {levelLabel} · {timeLabel}</small><h3>{next.title}</h3></div><div className="next-modules">{next.modules.map((module) => { const MetaIcon = MODULE_META[module].icon; return <span key={module}><MetaIcon />{MODULE_META[module].label}</span>; })}{Boolean(next.randomCount) && <span className="random-module-chip"><Shuffle />{next.randomCount} RANDOM</span>}</div></div>
+    <div className="role-switch-panel">
+      <div className="role-switch-note"><b>YOUR SQUAD</b><span><ArrowLeftRight aria-hidden="true" /> Tap another seat to swap roles with that player. A swap clears everyone&apos;s READY.</span></div>
+      <div className="ready-seat-grid">{ROLES.map((seatRole) => { const player = data.room.players.find((candidate) => candidate.role === seatRole); const current = seatRole === role; return <button type="button" key={seatRole} data-ready={player?.ready} data-current={current} disabled={busy || current} onClick={() => onSwitchRole(seatRole)} aria-label={current ? `You are ${ROLE_META[seatRole].name}` : `Swap roles with ${player?.name ?? ROLE_META[seatRole].name}`}><span className="seat-monkey">{ROLE_META[seatRole].monkey}</span><div><small>{ROLE_META[seatRole].short} · {ROLE_META[seatRole].name}</small><b>{player?.name ?? "OPEN SEAT"}</b></div><div className="seat-state">{current ? <em className="seat-you">YOU</em> : <em className="seat-swap"><ArrowLeftRight aria-hidden="true" /> SWAP</em>}<i data-ready={player?.ready}>{player?.ready ? "READY ✓" : "NOT READY"}</i></div></button>; })}</div>
+    </div>
+    <div className="waiting-actions"><Button className="ready-button" disabled={busy || (!developer && self?.ready)} onClick={onReady}>{readyLabel}<Play /></Button></div>
+    <p>{next.level === 0 ? "Level 0 starts when all three are ready. No clock, no strikes, just learn the relay." : "The timer starts only when all three monkeys are ready."}<TutorialButton className="rules-link" label="Rules" /></p>
+  </section>;
 }
 
 // One sentence per role and module telling a new player what to do right now.
@@ -910,19 +866,95 @@ function CoachStrip({ role, modules, onDismiss }: { role: Role; modules: ModuleK
   return <section className="coach-strip" aria-label="Your move"><article key={first} data-role={role}><span className="coach-badge"><Lightbulb aria-hidden="true" /> YOUR MOVE{modules.length > 1 && <i>1 OF {modules.length}</i>}</span><b className="coach-module"><Icon aria-hidden="true" />{MODULE_META[first].label}</b><p>{COACH_LINES[first][role]}</p><button type="button" onClick={() => onDismiss(first)} aria-label={modules.length > 1 ? `Got it, show the next tip` : `Hide the ${MODULE_META[first].label.toLowerCase()} tip`}><X /></button></article></section>;
 }
 
+type RelayStage = "describe" | "operate" | "done";
+// How long the team can be silent before a nudge appears (levels 0 to 3).
+const NUDGE_AFTER_IDLE_MS = 25_000;
+const NUDGE_AFTER_SIGN_MS = 20_000;
+
+const PRACTICE_STEPS: Array<{ role: Role; label: string; stage: RelayStage }> = [
+  { role: "observer", label: "DEAF says what the bomb shows", stage: "describe" },
+  { role: "specialist", label: "MUTE looks it up and signs", stage: "describe" },
+  { role: "observer", label: "DEAF tells BLIND", stage: "operate" },
+  { role: "operator", label: "BLIND cuts", stage: "operate" },
+];
+
+const PRACTICE_LINES: Record<RelayStage, Record<Role, string>> = {
+  describe: {
+    observer: "Say what you see out loud: the light color, how many cables, and their colors from top to bottom.",
+    specialist: "Listen to DEAF. Find 3 cables + red light in the glowing table. Then press SEND A SIGN and send the cable's position from the top.",
+    operator: "Nothing to click yet. Listen: DEAF and MUTE are working out which cable.",
+  },
+  operate: {
+    observer: "MUTE signed a number. Tell BLIND: \"Cut cable number …\", counting from the top.",
+    specialist: "Sign sent. DEAF is passing it to BLIND. Watch the feed.",
+    operator: "DEAF is telling you which cable. Click it.",
+  },
+  done: {
+    observer: "Cable cut. That's the whole game: see, say, look up, sign, click.",
+    specialist: "Cable cut. That's the whole game: see, say, look up, sign, click.",
+    operator: "Cable cut. That's the whole game: see, say, look up, sign, click.",
+  },
+};
+
+const PRACTICE_NUDGES: Record<Exclude<RelayStage, "done">, Record<Role, string>> = {
+  describe: {
+    observer: "Say this out loud: \"The light is RED. Three cables: blue, red, green.\"",
+    specialist: "Row with 3 cables, column with the red light: the answer is BLUE. Blue is the first cable, so press SEND A SIGN and send 1.",
+    operator: "Ask DEAF: \"What do you see?\" Then wait for the answer.",
+  },
+  operate: {
+    observer: "Say: \"Cut the top cable.\"",
+    specialist: "You're done. If BLIND is lost, DEAF should say \"cut the top cable\".",
+    operator: "Click the top cable.",
+  },
+};
+
+const NUDGES: Record<ModuleKey, Record<Exclude<RelayStage, "done">, Partial<Record<Role, string>>>> = {
+  cable: {
+    describe: { observer: "Say out loud: the light color, how many cables, and their colors from top to bottom.", specialist: "Find the row for the cable count and the column for the light color. Sign the position of that color, counting from the top.", operator: "Ask DEAF what they see. Nothing to click yet." },
+    operate: { observer: "Tell BLIND which cable to click, counting from the top.", operator: "Ask DEAF which cable. MUTE already signed the answer." },
+  },
+  slider: {
+    describe: { observer: "Say the four light colors, left to right. Then ask BLIND for the four Braille numbers.", specialist: "Flip to the page whose light order matches. For each switch use BLIND's number to pick up or down, then sign 👆 or 👇 four times, left to right.", operator: "Hover each Braille cell and read its number out loud, left to right." },
+    operate: { observer: "Tell BLIND each switch, left to right: up or down. Then say ENTER.", operator: "Flip the switches DEAF says, left to right, then press ENTER." },
+  },
+  direction: {
+    describe: { observer: "Say the light color, and ask BLIND for the Braille number in the middle.", specialist: "Flip to the page with BLIND's number, find DEAF's light color, and sign that arrow.", operator: "Hover the middle Braille cell and say its number out loud." },
+    operate: { observer: "Tell BLIND which arrow to press.", operator: "Press the arrow DEAF says." },
+  },
+  calculator: {
+    describe: { observer: "Work out the sum on the screen and tell BLIND the answer. When a light appears, tell MUTE the answer and the light color.", specialist: "Odd or even answer? Find that row and DEAF's light color, then sign the number.", operator: "Type the answer DEAF gives you and press the enter key." },
+    operate: { observer: "Tell BLIND the one final key MUTE signed.", operator: "Press the final key DEAF says." },
+  },
+  piano: {
+    describe: { observer: "Say the big mode light's color, then the four small melody colors in order.", specialist: "Flip to the page for the mode light. Turn each melody color into a key number and sign all four in order.", operator: "Wait for DEAF to give you four key numbers." },
+    operate: { observer: "Tell BLIND the four key numbers in order.", operator: "Play the four keys DEAF says, in order." },
+  },
+};
+
+function nudgeFor(level: number, module: ModuleKey, role: Role, stage: RelayStage) {
+  if (stage === "done") return "";
+  if (level === 0) return PRACTICE_NUDGES[stage][role];
+  return NUDGES[module][stage][role] ?? "";
+}
+
+// Level 0 only: the four-step relay with the current step lit, plus one line
+// telling this player what to do right now.
+function PracticeChain({ role, stage }: { role: Role; stage: RelayStage }) {
+  return <section className="practice-chain" data-stage={stage} aria-label="The relay"><ol>{PRACTICE_STEPS.map((step, index) => { const active = stage === step.stage; const done = stage === "done" || (stage === "operate" && step.stage === "describe"); return <li key={index} data-active={active && !done} data-done={done} data-you={step.role === role}><span>{done ? "✓" : index + 1}</span><em>{ROLE_META[step.role].monkey}</em><b>{step.label}</b></li>; })}</ol><p data-stage={stage}><strong>{stage === "done" ? "DONE" : "YOU, NOW"}</strong>{PRACTICE_LINES[stage][role]}</p></section>;
+}
+
 type DeveloperControls = {
   role: Role;
   level: number;
   onRoleChange: (role: Role) => void;
   onLevelChange: (level: number) => void;
   onAction: (action: ModuleAction, value?: number | string) => void;
-  onTutorialAction: (action: TutorialAction, value?: number | string) => void;
   onChat: (symbol: string) => void;
   onMessage: (text: string) => void;
   onCursorMove: (point: CursorPoint) => void;
   onReady: () => void;
   onWaitingPreview: () => void;
-  onTutorialPreview: () => void;
   onReset: () => void;
   onExit: () => void;
   solution: string[];
@@ -950,9 +982,21 @@ function Game({ data, onData, developer, onLeave, banner }: { data: RoomSnapshot
   useEffect(() => {
     if (!developer && solvedTipKeys) markTipsLearned(solvedTipKeys.split(","));
   }, [developer, solvedTipKeys]);
-  const coachModules = game.phase === "playing" && prestart === 0
+  const coachModules = game.phase === "playing" && prestart === 0 && game.level > 0
     ? game.activeModules.filter((module) => !game.modules[module]?.solved && !learnedTips.has(`${role}:${module}`))
     : [];
+
+  // Which step of the relay the team is on: "describe" until MUTE sends a sign,
+  // "operate" until BLIND touches a control, "done" when the case is clear.
+  const relayStage: RelayStage = game.completed === game.moduleCount && game.moduleCount > 0
+    ? "done"
+    : game.lastSignalAt && (!game.lastActionAt || game.lastSignalAt > game.lastActionAt) ? "operate" : "describe";
+  const coaching = game.phase === "playing" && prestart === 0 && game.level <= 3;
+  const idleSince = Math.max(game.startAt ?? 0, game.lastSignalAt ?? 0, game.lastActionAt ?? 0);
+  const idleMs = coaching && clockReady && relayStage !== "done" && idleSince > 0 ? now - idleSince : 0;
+  const stalled = idleMs > (relayStage === "operate" ? NUDGE_AFTER_SIGN_MS : NUDGE_AFTER_IDLE_MS);
+  const focusModule = game.activeModules.find((module) => !game.modules[module]?.solved);
+  const nudge = stalled && focusModule ? nudgeFor(game.level, focusModule, role, relayStage) : "";
 
   useEffect(() => {
     const tick = () => setNow(serverNow());
@@ -969,14 +1013,6 @@ function Game({ data, onData, developer, onLeave, banner }: { data: RoomSnapshot
     finally { setBusy(false); }
   }, [developer, onData]);
 
-  const tutorialAct = useCallback(async (tutorialAction: TutorialAction, value?: number | string) => {
-    if (developer) return developer.onTutorialAction(tutorialAction, value);
-    setBusy(true); setError("");
-    try { onData(await requestRoom({ action: "tutorial-action", tutorialAction, value })); }
-    catch (cause) { setError(cause instanceof Error ? cause.message : "Tutorial action did not respond."); }
-    finally { setBusy(false); }
-  }, [developer, onData]);
-
   const reportCursor = useCallback((point: CursorPoint) => {
     cursorRef.current = point;
     if (developer) return developer.onCursorMove(point);
@@ -988,7 +1024,7 @@ function Game({ data, onData, developer, onLeave, banner }: { data: RoomSnapshot
   }, [developer]);
 
   useEffect(() => {
-    if (developer || role !== "operator" || (game.phase !== "playing" && game.phase !== "tutorial")) return;
+    if (developer || role !== "operator" || game.phase !== "playing") return;
     const heartbeat = window.setInterval(() => { const point = cursorRef.current; if (point.active) sendCursor(point); }, 300);
     return () => window.clearInterval(heartbeat);
   }, [developer, game.phase, role]);
@@ -1025,18 +1061,20 @@ function Game({ data, onData, developer, onLeave, banner }: { data: RoomSnapshot
   const caseFeed = <CaseFeed role={role} actionLog={game.actionLog} chatEnabled={game.chatEnabled} messages={game.messages} onSend={sendMessage} onSign={sendChat} busy={busy} />;
 
   return <main className="game-shell" data-role={role} data-developer={Boolean(developer)}>
-    <header className="game-header"><div className="game-header-start"><Link className="game-brand" href="/"><Bomb /><b>BOMBA<span>NANA</span></b></Link>{onLeave && !developer && <button type="button" className="leave-room-button" onClick={onLeave} aria-label="Leave room"><LogOut /><span>LEAVE</span></button>}</div><div className="room-pill"><Users /> {developer ? "TEST MODE" : "ROOM"} <b>{data.room.code}</b></div><div className="level-pill">{game.phase === "tutorial" ? <b>TUTORIAL</b> : <>LEVEL <b>{game.level === 11 ? "∞" : game.level}</b></>}</div><div className="timer-block" data-urgent={remaining < 30_000 && game.phase === "playing"}><Clock3 /><div><strong>{game.phase === "waiting" ? "READY" : prestart > 0 ? `0:0${prestart}` : formatTime(remaining)}</strong><Progress value={game.phase === "waiting" ? 100 : timePercent} /></div></div><div className="strike-block"><ShieldAlert />{Array.from({ length: game.maxMistakes }, (_, index) => <i key={index} data-hit={game.phase === "tutorial" ? index < (game.tutorial?.practiceMistakes ?? 0) : index < game.mistakes} />)}</div></header>
+    <header className="game-header"><div className="game-header-start"><Link className="game-brand" href="/"><Bomb /><b>BOMBA<span>NANA</span></b></Link>{onLeave && !developer && <button type="button" className="leave-room-button" onClick={onLeave} aria-label="Leave room"><LogOut /><span>LEAVE</span></button>}</div><div className="room-pill"><Users /> {developer ? "TEST MODE" : "ROOM"} <b>{data.room.code}</b></div><div className="level-pill">LEVEL <b>{game.level === 11 ? "∞" : game.level}</b>{game.level === 0 && <i>PRACTICE</i>}</div><div className="timer-block" data-urgent={game.level > 0 && remaining < 30_000 && game.phase === "playing"}><Clock3 /><div><strong>{game.phase === "waiting" ? "READY" : prestart > 0 ? `0:0${prestart}` : game.level === 0 ? "NO TIMER" : formatTime(remaining)}</strong><Progress value={game.phase === "waiting" || game.level === 0 ? 100 : timePercent} /></div></div><div className="strike-block"><ShieldAlert />{game.level === 0 ? <em className="no-strikes">NO STRIKES</em> : Array.from({ length: game.maxMistakes }, (_, index) => <i key={index} data-hit={index < game.mistakes} />)}</div></header>
     <section className="role-banner"><div className="role-identity"><span>{meta.monkey}</span><div><small>YOUR ASSIGNMENT</small><h1>{meta.name}</h1></div></div><p><RoleIcon />{meta.ability}</p><RoleSenses role={role} compact /></section>
-    {developer && <section className="developer-toolbar"><div className="developer-heading"><Wrench /><div><b>DEVELOPER MODE</b><span>Timer paused · shared test bomb</span></div></div><div className="developer-role-switcher">{ROLES.map((item) => <Button key={item} variant="outline" data-active={developer.role === item} onClick={() => developer.onRoleChange(item)}><span>{ROLE_META[item].monkey}</span>{ROLE_META[item].short}</Button>)}</div><div className="developer-level-switcher">{LEVELS.map(({ level }) => <button key={level} data-active={developer.level === level && game.phase !== "tutorial"} onClick={() => developer.onLevelChange(level)}>{level === 11 ? "∞" : level}</button>)}</div><details className="developer-solution"><summary>Reveal solution</summary><div>{developer.solution.map((line) => <span key={line}>{line}</span>)}</div></details><div className="developer-actions"><Button variant="outline" data-active={game.phase === "tutorial"} onClick={developer.onTutorialPreview}>Tutorial</Button><Button variant="outline" onClick={developer.onWaitingPreview}>Ready room</Button><Button variant="outline" onClick={developer.onReset}><RefreshCw /> Reset</Button><Button variant="outline" onClick={developer.onExit}><X /></Button></div></section>}
-    <div className="progress-rail"><span>{game.phase === "tutorial" ? `${game.tutorial?.step ?? 0}/8 STEPS` : `${game.completed}/${game.moduleCount} MODULES`}</span><Progress value={game.phase === "tutorial" ? ((game.tutorial?.step ?? 0) / 8) * 100 : (game.completed / game.moduleCount) * 100} /><span>{game.phase === "tutorial" ? "INFORMATION CHAIN" : game.levelTitle}</span></div>
+    {developer && <section className="developer-toolbar"><div className="developer-heading"><Wrench /><div><b>DEVELOPER MODE</b><span>Timer paused · shared test bomb</span></div></div><div className="developer-role-switcher">{ROLES.map((item) => <Button key={item} variant="outline" data-active={developer.role === item} onClick={() => developer.onRoleChange(item)}><span>{ROLE_META[item].monkey}</span>{ROLE_META[item].short}</Button>)}</div><div className="developer-level-switcher">{LEVELS.map(({ level }) => <button key={level} data-active={developer.level === level} onClick={() => developer.onLevelChange(level)}>{level === 11 ? "∞" : level}</button>)}</div><details className="developer-solution"><summary>Reveal solution</summary><div>{developer.solution.map((line) => <span key={line}>{line}</span>)}</div></details><div className="developer-actions"><Button variant="outline" onClick={developer.onWaitingPreview}>Ready room</Button><Button variant="outline" onClick={developer.onReset}><RefreshCw /> Reset</Button><Button variant="outline" onClick={developer.onExit}><X /></Button></div></section>}
+    <div className="progress-rail"><span>{game.completed}/{game.moduleCount} MODULES</span><Progress value={(game.completed / Math.max(1, game.moduleCount)) * 100} /><span>{game.levelTitle}</span></div>
     {banner && <p className="room-notice game-notice" role="status">{banner}</p>}
     {error && <p className="game-error">{error}</p>}
-    {game.phase === "playing" && prestart > 0 && <RoleCountdownCard role={role} seconds={prestart} />}
-    {game.phase === "waiting" ? <RoundWaitingRoom data={data} onReady={ready} onSwitchRole={switchRole} busy={busy} developer={Boolean(developer)} /> : game.phase === "tutorial" ? <TutorialExperience game={game} role={role} players={data.room.players} busy={busy} onAction={tutorialAct} onCursorMove={role === "operator" ? reportCursor : undefined} /> : <section className="game-workspace" data-role={role}>
+    {game.phase === "playing" && prestart > 0 && game.level >= 2 && <RoleCountdownCard role={role} seconds={prestart} />}
+    {coaching && game.level === 0 && <PracticeChain role={role} stage={relayStage} />}
+    {nudge && <div className="stuck-nudge" role="status"><span className="stuck-badge"><TriangleAlert aria-hidden="true" /> STUCK?</span><p>{nudge}</p></div>}
+    {game.phase === "waiting" ? <RoundWaitingRoom data={data} onReady={ready} onSwitchRole={switchRole} busy={busy} developer={Boolean(developer)} /> : <section className="game-workspace" data-role={role} data-coach={coaching && game.level === 0 ? relayStage : undefined}>
       {coachModules.length > 0 && <CoachStrip role={role} modules={coachModules} onDismiss={(module) => markTipsLearned([`${role}:${module}`], !developer)} />}
       {role === "operator" && <SuitcaseBomb game={game} vision="blind" act={act} busy={busy || prestart > 0} onCursorMove={reportCursor} />}
       {role === "observer" && <ObserverPanel game={game} feed={caseFeed} />}
-      {role === "specialist" && <SpecialistPanel key={`${game.level}-${game.activeModules.join("-")}`} game={game} />}
+      {role === "specialist" && <SpecialistPanel key={`${game.level}-${game.activeModules.join("-")}`} game={game} practice={game.level === 0} />}
       {role !== "observer" && caseFeed}
     </section>}
   </main>;
@@ -1056,13 +1094,13 @@ function DeveloperMode({ onExit }: { onExit: () => void }) {
   const [muteSignal, setMuteSignal] = useState<MuteSignal>({ symbol: "", updatedAt: 0, active: false });
 
   const loadLevel = useCallback((level: number) => { setState(createDeveloperBomb(level)); setCursor({ x: 0.55, y: 0.72, active: true }); }, []);
-  const loadTutorial = useCallback(() => { setState(createTutorialGameState(true)); setRole("operator"); setCursor({ x: 0.55, y: 0.72, active: true }); setMuteSignal({ symbol: "", updatedAt: 0, active: false }); }, []);
   const act = useCallback((moduleAction: ModuleAction, value?: number | string) => {
     setState((current) => {
       const next = structuredClone(current);
+      next.lastActionAt = Date.now();
       applyModuleAction(next, moduleAction, value);
       const done = completedModules(next) === activeModules(next).length;
-      if (done || next.mistakes >= next.maxMistakes) {
+      if (done || (next.level > 0 && next.mistakes >= next.maxMistakes)) {
         next.phase = "waiting";
         next.lastResult = done ? "cleared" : "strikes";
         next.startAt = null;
@@ -1071,21 +1109,6 @@ function DeveloperMode({ onExit }: { onExit: () => void }) {
       return next;
     });
   }, []);
-
-  const tutorialAct = useCallback((tutorialAction: TutorialAction, value?: number | string) => {
-    setState((current) => {
-      const next = structuredClone(current);
-      applyTutorialAction(next, role, tutorialAction, value);
-      return next;
-    });
-    if (tutorialAction === "mute-signal") setMuteSignal({ symbol: String(value ?? ""), updatedAt: Date.now(), active: true });
-  }, [role]);
-
-  useEffect(() => {
-    if (state.phase !== "tutorial" || !state.tutorial?.completedAt) return;
-    const timer = window.setTimeout(() => setState(createDeveloperBomb(1)), 4_000);
-    return () => window.clearTimeout(timer);
-  }, [state.phase, state.tutorial?.completedAt]);
 
   const ready = useCallback(() => {
     setState((current) => {
@@ -1100,7 +1123,7 @@ function DeveloperMode({ onExit }: { onExit: () => void }) {
       room: {
         code: "LOCAL", status: "playing", version: 1, isHost: true, readyCount: 0,
         players: ROLES.map((item) => ({ name: item === role ? "Test Player" : `${ROLE_META[item].short} Preview`, role: item, online: true, ready: false })),
-        game: role === "observer" || state.phase === "tutorial" ? { ...roleGame, operatorCursor: cursor, muteSignal } : roleGame,
+        game: role === "observer" ? { ...roleGame, operatorCursor: cursor, muteSignal } : roleGame,
       },
       player: { id: "developer", name: "Test Player", role },
     };
@@ -1117,7 +1140,7 @@ function DeveloperMode({ onExit }: { onExit: () => void }) {
     return lines;
   }, [state]);
 
-  return <Game data={data} onData={() => undefined} developer={{ role, level: state.level, onRoleChange: setRole, onLevelChange: loadLevel, onAction: act, onTutorialAction: tutorialAct, onChat: (symbol) => setMuteSignal({ symbol, updatedAt: Date.now(), active: true }), onMessage: (text) => role !== "specialist" && setState((current) => { const seq = (current.feedSeq ?? 0) + 1; return { ...current, feedSeq: seq, messages: [...current.messages, { id: makeId(), senderId: `developer-${role}`, senderRole: role, senderName: "Test Player", text, sentAt: Date.now(), seq }].slice(-40) }; }), onCursorMove: (point) => point.active && setCursor(point), onReady: ready, onWaitingPreview: () => setState((current) => ({ ...current, phase: "waiting", lastResult: "cleared", startAt: null, messages: [] })), onTutorialPreview: loadTutorial, onReset: () => state.phase === "tutorial" ? loadTutorial() : loadLevel(state.level), onExit, solution }} />;
+  return <Game data={data} onData={() => undefined} developer={{ role, level: state.level, onRoleChange: setRole, onLevelChange: loadLevel, onAction: act, onChat: (symbol) => { const at = Date.now(); setMuteSignal({ symbol, updatedAt: at, active: true }); setState((current) => ({ ...current, lastSignalAt: at })); }, onMessage: (text) => role !== "specialist" && setState((current) => { const seq = (current.feedSeq ?? 0) + 1; return { ...current, feedSeq: seq, messages: [...current.messages, { id: makeId(), senderId: `developer-${role}`, senderRole: role, senderName: "Test Player", text, sentAt: Date.now(), seq }].slice(-40) }; }), onCursorMove: (point) => point.active && setCursor(point), onReady: ready, onWaitingPreview: () => setState((current) => ({ ...current, phase: "waiting", lastResult: "cleared", startAt: null, messages: [] })), onReset: () => loadLevel(state.level), onExit, solution }} />;
 }
 
 const HOST_OFFLINE_BANNER = "The host's browser went offline. If they don't come back in a few seconds, another player takes over as host automatically.";
@@ -1185,7 +1208,7 @@ export default function GameClient() {
   }, [connection]);
 
   // DEAF always sees the Blind cursor and the Mute sign. In the tutorial everyone does.
-  const needsLive = Boolean(connection && data && (data.player.role === "observer" || data.room.game.phase === "tutorial"));
+  const needsLive = Boolean(connection && data && data.player.role === "observer");
   useEffect(() => {
     if (!connection || !needsLive) return;
     const stop = connection.watchLive(setLive);

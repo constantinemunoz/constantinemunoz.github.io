@@ -25,21 +25,8 @@ export const ROLE_META: Record<Role, { name: string; monkey: string; short: stri
 export type LightColor = "RED" | "YELLOW" | "GREEN" | "BLUE";
 export type Direction = "UP" | "DOWN" | "LEFT" | "RIGHT";
 export type ModuleKey = "cable" | "slider" | "direction" | "calculator" | "piano";
-export type RoundPhase = "waiting" | "playing" | "tutorial";
+export type RoundPhase = "waiting" | "playing";
 export type RoundResult = "new" | "cleared" | "timeout" | "strikes";
-export type TutorialAction = "begin" | "inspect-blind" | "observe-light" | "deaf-message" | "manual-rule" | "mute-signal" | "practice-error" | "solve-cable";
-export type TutorialFeedEntry = {
-  id: string;
-  kind: "system" | "message" | "signal" | "error" | "solved";
-  role?: Role;
-  text: string;
-};
-export type TutorialState = {
-  step: number;
-  practiceMistakes: number;
-  completedAt: number | null;
-  feed: TutorialFeedEntry[];
-};
 export type ChatMessage = {
   id: string;
   senderId: string;
@@ -66,7 +53,11 @@ export type LevelDefinition = {
 export const CORE_MODULES: ModuleKey[] = ["cable", "slider", "direction", "calculator"];
 export const ALL_MODULES: ModuleKey[] = [...CORE_MODULES, "piano"];
 
+// Level 0 is the optional practice round: one fixed cable, no timer, no strikes.
+export const PRACTICE_CABLE = { count: 3 as const, colors: ["BLUE", "RED", "GREEN"] as LightColor[], light: "RED" as LightColor, targetColor: "BLUE" as LightColor };
+
 export const LEVELS: LevelDefinition[] = [
+  { level: 0, title: "PRACTICE ROUND", modules: ["cable"], durationMs: 0 },
   { level: 1, title: "FIRST CUT", modules: ["cable"], durationMs: 150_000 },
   { level: 2, title: "COLOR ORDER", modules: ["slider"], durationMs: 150_000 },
   { level: 3, title: "CROSSED CIRCUITS", modules: ["cable", "slider"], durationMs: 150_000 },
@@ -151,8 +142,13 @@ export type GameState = {
   actionLog: ActionLogEntry[];
   feedSeq: number;
   chatEnabled: boolean;
+  // True when the campaign starts with the Level 0 practice round.
   tutorialEnabled: boolean;
-  tutorial: TutorialState | null;
+  // When the Mute player last sent a sign and the Blind player last touched a
+  // control (server clock). The screens use these to show which step of the
+  // relay the team is on and to notice when everyone has gone quiet.
+  lastSignalAt: number | null;
+  lastActionAt: number | null;
   messages: ChatMessage[];
   activeModuleKeys: ModuleKey[];
   modules: {
@@ -308,7 +304,7 @@ function createPianoModule() {
 }
 
 export function levelDefinition(level: number) {
-  return LEVELS.find((definition) => definition.level === level) ?? LEVELS[0];
+  return LEVELS.find((definition) => definition.level === level) ?? LEVELS.find((definition) => definition.level === 1)!;
 }
 
 export function nextLevelAfterClear(level: number) {
@@ -343,6 +339,9 @@ export function normalizeFeed(state: GameState) {
   const log = (state.actionLog ?? []) as Array<ActionLogEntry | string>;
   state.actionLog = log.map((entry) => (typeof entry === "string" ? (LEGACY_ERROR.test(entry) ? { text: entry, seq: 0, tone: "error" as const } : { text: entry, seq: 0 }) : entry));
   state.feedSeq = Math.max(state.feedSeq ?? 0, ...state.actionLog.map((entry) => entry.seq), ...(state.messages ?? []).map((message) => message.seq ?? 0));
+  state.lastSignalAt ??= null;
+  state.lastActionAt ??= null;
+  if ((state.phase as string) === "tutorial") state.phase = "waiting";
   return state;
 }
 
@@ -350,8 +349,9 @@ export function createGameState(level = 1, phase: RoundPhase = "waiting", lastRe
   const definition = levelDefinition(level);
   const keptMessages = [...messages].slice(-40);
   const startSeq = Math.max(0, ...keptMessages.map((message) => message.seq ?? 0)) + 1;
+  const practice = definition.level === 0;
   return {
-    serial: `BN-${Math.floor(10000 + Math.random() * 90000)}`,
+    serial: practice ? "PRACTICE" : `BN-${Math.floor(10000 + Math.random() * 90000)}`,
     level: definition.level,
     phase,
     lastResult,
@@ -363,89 +363,18 @@ export function createGameState(level = 1, phase: RoundPhase = "waiting", lastRe
     feedSeq: startSeq,
     chatEnabled,
     tutorialEnabled,
-    tutorial: null,
+    lastSignalAt: null,
+    lastActionAt: null,
     messages: keptMessages,
     activeModuleKeys: resolveLevelModules(definition),
     modules: {
-      cable: createCableModule(),
+      cable: practice ? { ...PRACTICE_CABLE, colors: [...PRACTICE_CABLE.colors], cut: null, solved: false } : createCableModule(),
       slider: createSliderModule(),
       direction: createDirectionModule(),
       calculator: createCalculatorModule(),
       piano: createPianoModule(),
     },
   };
-}
-
-export function createTutorialGameState(chatEnabled = false): GameState {
-  const state = createGameState(1, "tutorial", "new", chatEnabled, [], true);
-  state.serial = "TRAINING";
-  state.startAt = Date.now();
-  state.durationMs = 150_000;
-  state.activeModuleKeys = ["cable"];
-  state.modules.cable = {
-    count: 3,
-    colors: ["BLUE", "RED", "GREEN"],
-    light: "RED",
-    targetColor: "BLUE",
-    cut: null,
-    solved: false,
-  };
-  resetLog(state, "Training suitcase opened. Follow the shared information chain.");
-  state.tutorial = {
-    step: 0,
-    practiceMistakes: 0,
-    completedAt: null,
-    feed: [{ id: makeId(), kind: "system", text: "Tutorial-only shared view connected." }],
-  };
-  return state;
-}
-
-function tutorialEntry(kind: TutorialFeedEntry["kind"], text: string, role?: Role): TutorialFeedEntry {
-  return { id: makeId(), kind, text, role };
-}
-
-export function applyTutorialAction(state: GameState, role: Role, action: TutorialAction, value?: number | string) {
-  const tutorial = state.tutorial;
-  if (state.phase !== "tutorial" || !tutorial) return { ok: false, error: "The tutorial is not active." };
-  if (tutorial.completedAt) return { ok: false, error: "The tutorial is already complete." };
-
-  const expected: Array<{ action: TutorialAction; role?: Role }> = [
-    { action: "begin" },
-    { action: "inspect-blind", role: "operator" },
-    { action: "observe-light", role: "observer" },
-    { action: "deaf-message", role: "observer" },
-    { action: "manual-rule", role: "specialist" },
-    { action: "mute-signal", role: "specialist" },
-    { action: "practice-error", role: "operator" },
-    { action: "solve-cable", role: "operator" },
-  ];
-  const next = expected[tutorial.step];
-  if (!next || next.action !== action) return { ok: false, error: "Complete the highlighted tutorial action first." };
-  if (next.role && role !== next.role) return { ok: false, error: `${ROLE_META[next.role].short} must perform this step.` };
-
-  if (action === "begin") tutorial.feed.push(tutorialEntry("system", "Practice cable armed. The clock is shared by all three roles."));
-  if (action === "inspect-blind") tutorial.feed.push(tutorialEntry("system", "BLIND can feel three cable positions, but their colors and light stay hidden.", "operator"));
-  if (action === "observe-light") tutorial.feed.push(tutorialEntry("system", "DEAF sees a RED light and BLUE · RED · GREEN cables.", "observer"));
-  if (action === "deaf-message") tutorial.feed.push(tutorialEntry("message", "RED LIGHT · 3 CABLES", "observer"));
-  if (action === "manual-rule") tutorial.feed.push(tutorialEntry("system", "MUTE matched the three-cable + red-light rule to the BLUE cable.", "specialist"));
-  if (action === "mute-signal" && String(value) === "1") tutorial.feed.push(tutorialEntry("signal", "1", "specialist"));
-  if (action === "mute-signal" && String(value) !== "1") return { ok: false, error: "Send the highlighted cable position." };
-  if (action === "practice-error") {
-    if (Number(value) !== 1) return { ok: false, error: "Try the highlighted practice-error cable." };
-    tutorial.practiceMistakes = 1;
-    tutorial.feed.push(tutorialEntry("error", "Practice error: wrong cable. In a normal round, the team gets a strike and everyone sees this alert.", "operator"));
-  }
-  if (action === "solve-cable") {
-    if (Number(value) !== 0) return { ok: false, error: "Use the answer MUTE sent." };
-    state.modules.cable.cut = 0;
-    state.modules.cable.solved = true;
-    tutorial.completedAt = Date.now();
-    tutorial.feed.push(tutorialEntry("solved", "Module solved. Information chain complete.", "operator"));
-  }
-
-  tutorial.step += 1;
-  tutorial.feed = tutorial.feed.slice(-12);
-  return { ok: true };
 }
 
 export function activeModules(state: GameState) {
@@ -490,18 +419,8 @@ export function publicStateForRole(state: GameState, role: Role, playerId = "") 
     moduleCount: enabledModules.length,
     chatEnabled: state.chatEnabled,
     tutorialEnabled: Boolean(state.tutorialEnabled),
-    tutorial: state.tutorial
-      ? {
-          ...state.tutorial,
-          cable: {
-            count: state.modules.cable.count,
-            colors: state.modules.cable.colors,
-            light: state.modules.cable.light,
-            cut: state.modules.cable.cut,
-            solved: state.modules.cable.solved,
-          },
-        }
-      : null,
+    lastSignalAt: state.lastSignalAt ?? null,
+    lastActionAt: state.lastActionAt ?? null,
     messages: visibleMessages,
   };
 
@@ -554,6 +473,10 @@ export function publicStateForRole(state: GameState, role: Role, playerId = "") 
 }
 
 function strike(state: GameState, note: string) {
+  if (state.level === 0) {
+    logAction(state, `Practice: ${note} No strike in the practice round. Try again.`, "error");
+    return;
+  }
   state.mistakes += 1;
   logAction(state, `${note} Strike ${state.mistakes}/${state.maxMistakes}.`, "error");
 }

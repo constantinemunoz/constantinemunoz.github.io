@@ -170,23 +170,27 @@ function cutCorrectCable(engine, id = HOST) {
   assert(resumed.data.state.lastResult === "cleared", "the level clears under the new host");
 }
 
-// --- Tutorial ---------------------------------------------------------------------
+// --- Level 0 practice round -----------------------------------------------------
 {
   const engine = newRoom({ tutorialEnabled: true });
-  ok(engine.handle(HOST, { action: "start" }, now), "start tutorial");
-  assert(engine.data.state.phase === "tutorial" && engine.data.state.startAt === now, "tutorial runs on the shared clock");
-  const steps = [
-    [HOST, "begin"], [HOST, "inspect-blind"], [DEAF, "observe-light"], [DEAF, "deaf-message"],
-    [MUTE, "manual-rule"], [MUTE, "mute-signal", 1], [HOST, "practice-error", 1], [HOST, "solve-cable", 0],
-  ];
-  rejected(engine.handle(DEAF, { action: "tutorial-action", tutorialAction: "observe-light" }, now), /highlighted/, "tutorial steps must happen in order");
-  for (const [id, tutorialAction, value] of steps) {
-    const result = ok(engine.handle(id, { action: "tutorial-action", tutorialAction, value }, now), `tutorial ${tutorialAction}`);
-    if (tutorialAction === "mute-signal") assert(result.signal?.symbol === "1", "the tutorial sign is broadcast");
-  }
-  assert(engine.data.state.tutorial.completedAt === now, "completion uses the shared clock");
-  assert(!engine.tick(now + 3_999), "tutorial lingers for four seconds");
-  assert(engine.tick(now + 4_000) && engine.data.state.phase === "playing" && engine.data.state.level === 1, "tutorial hands off to Level 1");
+  ok(engine.handle(HOST, { action: "start" }, now), "start a practice campaign");
+  assert(engine.data.state.level === 0 && engine.data.state.phase === "waiting", "a practice campaign opens the Level 0 ready room");
+  readyAll(engine);
+  assert(engine.data.state.level === 0 && engine.data.state.phase === "playing" && engine.data.state.durationMs === 0, "Level 0 arms without a timer");
+  assert(!engine.tick(now + 60 * 60 * 1000), "Level 0 never times out");
+  now += 3_000;
+
+  assert(engine.noteSignal(now), "the host records a sign");
+  assert(!engine.noteSignal(now - 1), "older signs are ignored");
+  assert(engine.snapshotFor(DEAF).room.game.lastSignalAt === now, "every view sees when the last sign arrived");
+
+  ok(engine.handle(HOST, { action: "module", moduleAction: "cut-cable", value: 1 }, now), "wrong practice cut");
+  const blind = engine.snapshotFor(HOST).room.game;
+  assert(blind.mistakes === 0 && blind.actionLog.at(-1).tone === "error" && blind.lastActionAt === now, "no strike in Level 0, but the alert and action time are recorded");
+  ok(engine.handle(HOST, { action: "module", moduleAction: "cut-cable", value: 0 }, now), "correct practice cut");
+  assert(engine.data.state.lastResult === "cleared" && engine.data.state.phase === "waiting", "Level 0 clears");
+  readyAll(engine);
+  assert(engine.data.state.level === 1 && engine.data.state.durationMs === 150_000 && engine.data.state.lastSignalAt === null, "Level 1 follows with a normal timer and fresh relay timestamps");
 }
 
 // --- Bad input never throws ---------------------------------------------------------
@@ -199,4 +203,4 @@ function cutCorrectCable(engine, id = HOST) {
   rejected(engine.handle("uid-nobody", { action: "ready" }, now), /no longer exists/, "strangers cannot act");
 }
 
-console.log(`Passed ${checks} room engine checks: lobby, campaign loop, secrecy, timeouts, swaps, rejoin, leave, host handoff and takeover, tutorial, and bad input.`);
+console.log(`Passed ${checks} room engine checks: lobby, campaign loop, secrecy, timeouts, swaps, rejoin, leave, host handoff and takeover, the practice round, and bad input.`);
