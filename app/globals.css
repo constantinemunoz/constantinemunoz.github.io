@@ -2244,3 +2244,52 @@ html, body { width: 100%; height: 100%; overflow: hidden; overscroll-behavior: n
   .deaf-side { grid-template-rows: auto auto; }
   .deaf-side > .case-feed { min-height: 300px; }
 }
+
+/* "Your move" tips: one line per module, shown until the team clears it once. */
+.coach-strip { flex: 0 0 auto; display: grid; gap: 8px; margin: 2px 0 10px; }
+.coach-strip > article { position: relative; display: grid; grid-template-columns: auto auto minmax(0, 1fr) auto; align-items: center; gap: 12px; padding: 10px 12px; border: 2px solid var(--ink); border-radius: 14px; background: #fff3b0; box-shadow: 4px 4px 0 var(--ink); animation: coach-in .35s cubic-bezier(.2, .9, .25, 1.2) both; }
+.coach-badge { display: inline-flex; align-items: center; gap: 5px; padding: 6px 9px; border-radius: 999px; background: var(--ink); color: var(--yellow); font: 950 .66rem/1 var(--font-mono); letter-spacing: .1em; white-space: nowrap; }
+.coach-badge svg { width: 14px; height: 14px; }
+.coach-module { display: inline-flex; align-items: center; gap: 6px; color: var(--ink); font: 950 .7rem/1 var(--font-mono); letter-spacing: .08em; white-space: nowrap; }
+.coach-module svg { width: 15px; height: 15px; }
+.coach-strip p { margin: 0; color: var(--ink); font: 800 .92rem/1.35 "Arial Rounded MT Bold", "Avenir Next", Arial, sans-serif; }
+.coach-strip button { width: 30px; height: 30px; display: grid; place-items: center; padding: 0; border: 2px solid var(--ink); border-radius: 50%; background: #fff; color: var(--ink); }
+.coach-strip button svg { width: 15px; height: 15px; }
+@keyframes coach-in { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: translateY(0); } }
+@media (max-width: 780px) {
+  .coach-strip > article { grid-template-columns: auto minmax(0, 1fr) auto; row-gap: 6px; padding: 8px 10px; }
+  .coach-badge { grid-column: 1; }
+  .coach-module { grid-column: 2; }
+  .coach-strip p { grid-column: 1 / -1; grid-row: 2; font-size: .84rem; }
+  .coach-strip button { grid-column: 3; grid-row: 1; width: 26px; height: 26px; }
+}
+
+/* See / hear / talk: full tiles on the countdown card, small chips in the role banner. */
+.role-senses { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin: 0; padding: 0; list-style: none; }
+.role-senses li { position: relative; display: grid; justify-items: center; gap: 4px; padding: 12px 8px 10px; border: 2px solid var(--ink); border-radius: 14px; background: #eafbef; color: var(--ink); }
+.role-senses li[data-can="false"] { background: #ffe3e3; }
+.role-senses li > svg { width: 26px; height: 26px; }
+.role-senses b { font: 950 .78rem/1 var(--font-mono); letter-spacing: .1em; }
+.role-senses small { color: #4e5d74; font-size: .72rem; font-weight: 700; text-align: center; line-height: 1.2; }
+.sense-mark { position: absolute; top: -9px; right: -9px; width: 24px; height: 24px; display: grid; place-items: center; border: 2px solid var(--ink); border-radius: 50%; background: #2fbf63; color: #fff; font: 950 .8rem/1 Arial, sans-serif; }
+.role-senses li[data-can="false"] .sense-mark { background: #e5303a; }
+.role-senses[data-compact="true"] { display: flex; gap: 6px; }
+.role-senses[data-compact="true"] li { display: inline-flex; align-items: center; gap: 5px; padding: 5px 9px 5px 7px; border-width: 1.5px; border-radius: 999px; }
+.role-senses[data-compact="true"] li > svg { width: 15px; height: 15px; }
+.role-senses[data-compact="true"] b { font-size: .62rem; }
+.role-senses[data-compact="true"] .sense-mark { position: static; width: 16px; height: 16px; border-width: 1.5px; font-size: .58rem; }
+.role-banner { grid-template-columns: auto minmax(0, 1fr) auto; }
+@media (max-width: 1050px) { .role-banner { grid-template-columns: auto minmax(0, 1fr) auto; } .role-banner > p { display: none; } }
+@media (max-width: 780px) { .role-banner { grid-template-columns: minmax(0, 1fr); gap: 6px; } .role-banner .role-senses { justify-self: start; } .role-senses[data-compact="true"] li { padding: 3px 7px 3px 5px; } }
+
+/* Role card during the 3-second countdown. */
+.role-card-overlay { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; padding: 16px; background: rgb(23 32 52 / .55); backdrop-filter: blur(4px); animation: coach-in .2s ease-out both; }
+.role-card { --role-accent: #3185fc; position: relative; width: min(440px, 100%); display: grid; justify-items: center; gap: 6px; padding: 30px 22px 22px; border: 3px solid var(--ink); border-radius: 24px; background: #fff; color: var(--ink); box-shadow: 10px 10px 0 var(--role-accent); text-align: center; animation: sign-pop .3s cubic-bezier(.2, .9, .25, 1.25) both; }
+.role-card[data-role="observer"] { --role-accent: #e8b61b; }
+.role-card[data-role="specialist"] { --role-accent: #ef5b84; }
+.role-card-count { position: absolute; top: -22px; right: -22px; width: 54px; height: 54px; display: grid; place-items: center; border: 3px solid var(--ink); border-radius: 50%; background: var(--yellow); font: 950 1.6rem/1 var(--font-mono); }
+.role-card-monkey { font-size: 4.6rem; line-height: 1; }
+.role-card > small { color: #5d6b82; font: 900 .72rem/1 var(--font-mono); letter-spacing: .18em; }
+.role-card h2 { margin: 0; font-size: clamp(2.4rem, 8vw, 3.4rem); line-height: 1; letter-spacing: -.02em; }
+.role-card > p { max-width: 340px; margin: 4px 0 14px; color: #33425b; font-size: 1rem; font-weight: 700; line-height: 1.35; }
+.role-card .role-senses { width: 100%; }

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent as ReactFormEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type FormEvent as ReactFormEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import {
   ArrowDown,
   ArrowLeft,
@@ -18,11 +18,17 @@ import {
   Clock3,
   Copy,
   CornerDownLeft,
+  Ear,
+  EarOff,
   Eye,
+  EyeOff,
   Hand,
   Hash,
+  Lightbulb,
   LogOut,
   MessageCircle,
+  Mic,
+  MicOff,
   MousePointer2,
   Piano,
   Play,
@@ -82,6 +88,7 @@ import {
   type TutorialAction,
   type TutorialFeedEntry,
 } from "@/lib/game";
+import { getLearnedTips, getServerLearnedTips, markTipsLearned, subscribeLearnedTips } from "@/lib/coach-store";
 import {
   createRoom,
   describeError,
@@ -732,6 +739,80 @@ function RoundWaitingRoom({ data, onReady, onSwitchRole, busy, developer }: { da
   return <section className="round-waiting-room"><div className="waiting-result" data-result={game.lastResult}><span>{game.lastResult === "cleared" ? "🍌" : game.lastResult === "timeout" ? "⏱" : game.lastResult === "strikes" ? "💥" : "💣"}</span><small>{retry ? "NEXT ATTEMPT" : "NEXT LEVEL"}</small><h2>{heading}</h2></div><div className="next-level-card"><div><small>LEVEL {levelLabel} · {formatTime(next.durationMs)}</small><h3>{next.title}</h3></div><div className="next-modules">{next.modules.map((module) => { const MetaIcon = MODULE_META[module].icon; return <span key={module}><MetaIcon />{MODULE_META[module].label}</span>; })}{Boolean(next.randomCount) && <span className="random-module-chip"><Shuffle />{next.randomCount} RANDOM</span>}</div></div><div className="role-switch-panel"><div className="role-switch-note"><b>CHOOSE YOUR ROLE</b><span>Select another seat to swap. A swap clears everyone&apos;s READY.</span></div><div className="ready-seat-grid">{ROLES.map((role) => { const player = data.room.players.find((candidate) => candidate.role === role); const current = role === data.player.role; return <button type="button" key={role} data-ready={player?.ready} data-current={current} disabled={busy || current} onClick={() => onSwitchRole(role)} aria-label={current ? `You are ${ROLE_META[role].name}` : `Swap with ${player?.name ?? ROLE_META[role].name}`}><span>{ROLE_META[role].monkey}</span><div><small>{ROLE_META[role].short}</small><b>{player?.name ?? "OPEN"}</b></div><strong>{current ? "YOU" : player?.ready ? "READY · SWAP" : "SWAP"}</strong></button>; })}</div></div><div className="waiting-actions"><TutorialButton className="waiting-tutorial-button" label="How to play" /><Button className="ready-button" disabled={busy || (!developer && self?.ready)} onClick={onReady}>{busy ? "UPDATING…" : developer ? "READY ALL & START" : self?.ready ? `WAITING FOR ${3 - data.room.readyCount}` : "I'M READY"}<Play /></Button></div><p>The timer starts only when all three monkeys are ready.</p></section>;
 }
 
+// One sentence per role and module telling a new player what to do right now.
+// Shown above the bomb until the team clears that module once.
+const COACH_LINES: Record<ModuleKey, Record<Role, string>> = {
+  cable: {
+    operator: "You can't see colors. Wait for DEAF to tell you which cable, then click it.",
+    observer: "Tell MUTE the light color and the cable colors from top to bottom. Then watch MUTE's sign and tell BLIND which cable to cut.",
+    specialist: "Find the cable count and light color in your table to get a cable color. Sign where that color sits from the top, using the order DEAF gave you.",
+  },
+  slider: {
+    operator: "Hover each Braille cell to see its number and read all four out loud, left to right. Then flip the switches DEAF tells you and press ENTER.",
+    observer: "Tell MUTE the four light colors, left to right. Watch MUTE's signs and tell BLIND which switches go up.",
+    specialist: "Flip to the page whose light order matches what DEAF says. Use BLIND's four numbers to pick up or down for each switch, then sign 👆 or 👇 for each one in order.",
+  },
+  direction: {
+    operator: "Hover the Braille cell in the middle and say its number out loud. Then press the arrow DEAF tells you.",
+    observer: "Tell MUTE the light color. Watch MUTE's arrow sign and tell BLIND which arrow to press. A wrong press changes the light.",
+    specialist: "Flip to the page with BLIND's number, then find DEAF's light color. Sign that arrow with 👆 👇 👈 or 👉.",
+  },
+  calculator: {
+    operator: "Type the answer DEAF gives you on the Braille keys and press the enter key. Then press the one final key DEAF tells you.",
+    observer: "Work out the sum on the screen and tell BLIND the answer. When a light appears, tell MUTE the answer and the light color, then pass MUTE's number to BLIND.",
+    specialist: "When DEAF gives you the answer and a light color, check whether the answer is odd or even. Find that row and color in your table and sign the number.",
+  },
+  piano: {
+    operator: "Play the four keys DEAF tells you, in order. Hover a key to see its number. A wrong key restarts the tune.",
+    observer: "Tell MUTE the color of the big mode light, then the four small melody colors in order. Pass MUTE's four numbers to BLIND.",
+    specialist: "Flip to the page for the mode light's color. Turn each melody color into a key number and sign all four in order.",
+  },
+};
+
+const ROLE_JOBS: Record<Role, string> = {
+  operator: "You press every button. Listen to DEAF to know which one.",
+  observer: "You are the eyes. Describe the bomb and pass MUTE's signs to BLIND.",
+  specialist: "You have the manual. Look up the answer and sign it to DEAF.",
+};
+
+type Sense = { label: "SEE" | "HEAR" | "TALK"; can: boolean; note: string };
+const ROLE_SENSES: Record<Role, Sense[]> = {
+  operator: [
+    { label: "SEE", can: false, note: "No colors" },
+    { label: "HEAR", can: true, note: "Listen to DEAF" },
+    { label: "TALK", can: true, note: "Read Braille aloud" },
+  ],
+  observer: [
+    { label: "SEE", can: true, note: "The whole bomb" },
+    { label: "HEAR", can: false, note: "Keep sound off" },
+    { label: "TALK", can: true, note: "Describe it" },
+  ],
+  specialist: [
+    { label: "SEE", can: false, note: "Bomb hidden" },
+    { label: "HEAR", can: true, note: "Everyone" },
+    { label: "TALK", can: false, note: "Signs only" },
+  ],
+};
+
+function SenseIcon({ sense }: { sense: Sense }) {
+  if (sense.label === "SEE") return sense.can ? <Eye aria-hidden="true" /> : <EyeOff aria-hidden="true" />;
+  if (sense.label === "HEAR") return sense.can ? <Ear aria-hidden="true" /> : <EarOff aria-hidden="true" />;
+  return sense.can ? <Mic aria-hidden="true" /> : <MicOff aria-hidden="true" />;
+}
+
+function RoleSenses({ role, compact = false }: { role: Role; compact?: boolean }) {
+  return <ul className="role-senses" data-compact={compact} aria-label="What your role can do">{ROLE_SENSES[role].map((sense) => <li key={sense.label} data-can={sense.can} aria-label={`${sense.label}: ${sense.can ? "yes" : "no"}. ${sense.note}`}><SenseIcon sense={sense} /><b>{sense.label}</b><span className="sense-mark" aria-hidden="true">{sense.can ? "✓" : "✕"}</span>{!compact && <small>{sense.note}</small>}</li>)}</ul>;
+}
+
+function RoleCountdownCard({ role, seconds }: { role: Role; seconds: number }) {
+  const meta = ROLE_META[role];
+  return <div className="role-card-overlay" role="status" aria-live="polite"><div className="role-card" data-role={role}><span className="role-card-count" aria-label={`Starting in ${seconds}`}>{seconds}</span><span className="role-card-monkey" aria-hidden="true">{meta.monkey}</span><small>YOU ARE</small><h2>{meta.short}</h2><p>{ROLE_JOBS[role]}</p><RoleSenses role={role} /></div></div>;
+}
+
+function CoachStrip({ role, modules, onDismiss }: { role: Role; modules: ModuleKey[]; onDismiss: (module: ModuleKey) => void }) {
+  return <section className="coach-strip" aria-label="Your move">{modules.map((module) => { const Icon = MODULE_META[module].icon; return <article key={module} data-role={role}><span className="coach-badge"><Lightbulb aria-hidden="true" /> YOUR MOVE</span><b className="coach-module"><Icon aria-hidden="true" />{MODULE_META[module].label}</b><p>{COACH_LINES[module][role]}</p><button type="button" onClick={() => onDismiss(module)} aria-label={`Hide the ${MODULE_META[module].label.toLowerCase()} tip`}><X /></button></article>; })}</section>;
+}
+
 type DeveloperControls = {
   role: Role;
   level: number;
@@ -762,8 +843,19 @@ function Game({ data, onData, developer, onLeave, banner }: { data: RoomSnapshot
   const cursorLastSent = useRef(0);
   const clockReady = now > 0;
   const remaining = game.startAt && clockReady ? game.startAt + game.durationMs - now : game.durationMs;
-  const prestart = game.startAt && clockReady ? Math.max(0, Math.ceil((game.startAt - now) / 1000)) : 0;
+  // Capped at 3 so clock rounding never shows a "4" on the 3-second countdown.
+  const prestart = game.startAt && clockReady ? Math.min(3, Math.max(0, Math.ceil((game.startAt - now) / 1000))) : 0;
   const timePercent = Math.max(0, Math.min(100, (remaining / game.durationMs) * 100));
+
+  // "Your move" tips: one line per unsolved module this player hasn't learned yet.
+  const learnedTips = useSyncExternalStore(subscribeLearnedTips, getLearnedTips, getServerLearnedTips);
+  const solvedTipKeys = game.activeModules.filter((module) => game.modules[module]?.solved).map((module) => `${role}:${module}`).join(",");
+  useEffect(() => {
+    if (!developer && solvedTipKeys) markTipsLearned(solvedTipKeys.split(","));
+  }, [developer, solvedTipKeys]);
+  const coachModules = game.phase === "playing" && prestart === 0
+    ? game.activeModules.filter((module) => !game.modules[module]?.solved && !learnedTips.has(`${role}:${module}`))
+    : [];
 
   useEffect(() => {
     const tick = () => setNow(serverNow());
@@ -836,11 +928,13 @@ function Game({ data, onData, developer, onLeave, banner }: { data: RoomSnapshot
 
   return <main className="game-shell" data-role={role} data-developer={Boolean(developer)}>
     <header className="game-header"><div className="game-header-start"><Link className="game-brand" href="/"><Bomb /><b>BOMBA<span>NANA</span></b></Link>{onLeave && !developer && <button type="button" className="leave-room-button" onClick={onLeave} aria-label="Leave room"><LogOut /><span>LEAVE</span></button>}</div><div className="room-pill"><Users /> {developer ? "TEST MODE" : "ROOM"} <b>{data.room.code}</b></div><div className="level-pill">{game.phase === "tutorial" ? <b>TUTORIAL</b> : <>LEVEL <b>{game.level === 11 ? "∞" : game.level}</b></>}</div><div className="timer-block" data-urgent={remaining < 30_000 && game.phase === "playing"}><Clock3 /><div><strong>{game.phase === "waiting" ? "READY" : prestart > 0 ? `0:0${prestart}` : formatTime(remaining)}</strong><Progress value={game.phase === "waiting" ? 100 : timePercent} /></div></div><div className="strike-block"><ShieldAlert />{Array.from({ length: game.maxMistakes }, (_, index) => <i key={index} data-hit={game.phase === "tutorial" ? index < (game.tutorial?.practiceMistakes ?? 0) : index < game.mistakes} />)}</div></header>
-    <section className="role-banner"><div className="role-identity"><span>{meta.monkey}</span><div><small>YOUR ASSIGNMENT</small><h1>{meta.name}</h1></div></div><p><RoleIcon />{meta.ability}</p></section>
+    <section className="role-banner"><div className="role-identity"><span>{meta.monkey}</span><div><small>YOUR ASSIGNMENT</small><h1>{meta.name}</h1></div></div><p><RoleIcon />{meta.ability}</p><RoleSenses role={role} compact /></section>
     {developer && <section className="developer-toolbar"><div className="developer-heading"><Wrench /><div><b>DEVELOPER MODE</b><span>Timer paused · shared test bomb</span></div></div><div className="developer-role-switcher">{ROLES.map((item) => <Button key={item} variant="outline" data-active={developer.role === item} onClick={() => developer.onRoleChange(item)}><span>{ROLE_META[item].monkey}</span>{ROLE_META[item].short}</Button>)}</div><div className="developer-level-switcher">{LEVELS.map(({ level }) => <button key={level} data-active={developer.level === level && game.phase !== "tutorial"} onClick={() => developer.onLevelChange(level)}>{level === 11 ? "∞" : level}</button>)}</div><details className="developer-solution"><summary>Reveal solution</summary><div>{developer.solution.map((line) => <span key={line}>{line}</span>)}</div></details><div className="developer-actions"><Button variant="outline" data-active={game.phase === "tutorial"} onClick={developer.onTutorialPreview}>Tutorial</Button><Button variant="outline" onClick={developer.onWaitingPreview}>Ready room</Button><Button variant="outline" onClick={developer.onReset}><RefreshCw /> Reset</Button><Button variant="outline" onClick={developer.onExit}><X /></Button></div></section>}
     <div className="progress-rail"><span>{game.phase === "tutorial" ? `${game.tutorial?.step ?? 0}/8 STEPS` : `${game.completed}/${game.moduleCount} MODULES`}</span><Progress value={game.phase === "tutorial" ? ((game.tutorial?.step ?? 0) / 8) * 100 : (game.completed / game.moduleCount) * 100} /><span>{game.phase === "tutorial" ? "INFORMATION CHAIN" : game.levelTitle}</span></div>
     {banner && <p className="room-notice game-notice" role="status">{banner}</p>}
     {error && <p className="game-error">{error}</p>}
+    {coachModules.length > 0 && <CoachStrip role={role} modules={coachModules} onDismiss={(module) => markTipsLearned([`${role}:${module}`], !developer)} />}
+    {game.phase === "playing" && prestart > 0 && <RoleCountdownCard role={role} seconds={prestart} />}
     {game.phase === "waiting" ? <RoundWaitingRoom data={data} onReady={ready} onSwitchRole={switchRole} busy={busy} developer={Boolean(developer)} /> : game.phase === "tutorial" ? <TutorialExperience game={game} role={role} players={data.room.players} busy={busy} onAction={tutorialAct} onCursorMove={role === "operator" ? reportCursor : undefined} /> : <section className="game-workspace" data-role={role}>
       {role === "operator" && <SuitcaseBomb game={game} vision="blind" act={act} busy={busy || prestart > 0} onCursorMove={reportCursor} />}
       {role === "observer" && <ObserverPanel game={game} feed={caseFeed} />}
