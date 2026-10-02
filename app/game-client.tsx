@@ -16,6 +16,7 @@ import {
   ChevronLeft,
   ChevronRight,
   CircleHelp,
+  Compass,
   Clock3,
   Copy,
   CornerDownLeft,
@@ -35,6 +36,7 @@ import {
   Play,
   Radio,
   RefreshCw,
+  RotateCw,
   Scissors,
   Send,
   ShieldAlert,
@@ -77,7 +79,11 @@ import {
   ROLES,
   SLIDER_NUMBER_GROUPS,
   SLIDER_RULES,
+  SYMBOL_NAMES,
+  SYMBOL_RULES,
+  SYMBOLS,
   type Direction,
+  type SymbolKey,
   type GameState,
   type LightColor,
   type ModuleAction,
@@ -107,6 +113,8 @@ type SliderView = { lights?: LightColor[]; braille?: number[]; current: boolean[
 type DirectionView = { light?: LightColor; braille?: number; pressed?: Direction | null; solved: boolean };
 type CalculatorView = { expression?: string; entered?: string; enteredLength?: number; stage: "entry" | "confirm"; light?: LightColor | null; pressed?: number | null; solved: boolean };
 type PianoView = { modeLight?: LightColor; melody?: LightColor[]; pressedCount?: number; solved: boolean };
+// DEAF gets seed, button colors and the beep; BLIND gets the pointer and the button count.
+type SymbolView = { seed?: 1 | 2 | 3 | 4; pointer: number; buttons?: LightColor[]; buttonCount?: number; pressed: number | null; solved: boolean; beep?: boolean };
 type ChatMessageView = { id: string; senderRole: Role; senderName: string; text: string; sentAt: number; seq?: number };
 type PublicGameView = {
   serial: string | null;
@@ -127,7 +135,7 @@ type PublicGameView = {
   lastSignalAt: number | null;
   lastActionAt: number | null;
   messages: ChatMessageView[];
-  modules: { cable: CableView; slider: SliderView; direction: DirectionView; calculator: CalculatorView; piano: PianoView };
+  modules: { cable: CableView; slider: SliderView; direction: DirectionView; calculator: CalculatorView; piano: PianoView; symbol: SymbolView };
   operatorCursor?: CursorPoint;
   muteSignal?: MuteSignal;
 };
@@ -137,6 +145,7 @@ type RoomSnapshot = {
     status: "lobby" | "playing" | "defused" | "exploded";
     version: number;
     isHost: boolean;
+    startLevel: number;
     readyCount: number;
     players: Player[];
     game: PublicGameView;
@@ -163,6 +172,7 @@ const MODULE_META: Record<ModuleKey, { label: string; icon: typeof Scissors }> =
   direction: { label: "DIRECTION", icon: ArrowUp },
   calculator: { label: "CALCULATOR", icon: Calculator },
   piano: { label: "PIANO", icon: Piano },
+  symbol: { label: "SYMBOL DIAL", icon: Compass },
 };
 const BRAILLE: Record<number, number[]> = {
   0: [2, 4, 5],
@@ -224,7 +234,7 @@ function RoleChoice({ value, onChange }: { value: Role; onChange: (role: Role) =
   );
 }
 
-const TUTORIAL_PAGES = ["THE BOMB", "THE SQUAD", "THE RELAY", "THE MODULES", "THE PIANO", "THE ROUND"];
+const TUTORIAL_PAGES = ["THE BOMB", "THE SQUAD", "THE RELAY", "EASY MODULES", "HARD MODULES", "THE ROUND"];
 
 function TutorialSpread({ page }: { page: number }) {
   if (page === 0) return <div className="tutorial-spread"><section className="tutorial-page tutorial-art-page"><h3>BOMB</h3><div className="tutorial-case"><Bomb /><div><span>2:30</span><i>× × ×</i></div></div><p>Every suitcase combines one or more modules with the same shared clock.</p></section><section className="tutorial-page"><h3>READ THE DISPLAY</h3><div className="tutorial-callout"><Clock3 /><div><b>TIME</b><span>The timer appears on all three screens. Finish every active module before it reaches zero.</span></div></div><div className="tutorial-callout danger"><TriangleAlert /><div><b>STRIKES</b><span>A wrong answer adds a strike. Three strikes or no time left sends the same level back to the ready room.</span></div></div></section></div>;
@@ -233,9 +243,9 @@ function TutorialSpread({ page }: { page: number }) {
 
   if (page === 2) return <div className="tutorial-spread"><section className="tutorial-page tutorial-art-page"><h3>PASS THE CLUES</h3><div className="tutorial-relay"><div><span>🙉</span><b>DEAF</b></div><ArrowRight /><div><span>🙊</span><b>MUTE</b></div><ArrowRight /><div><span>🙈</span><b>BLIND</b></div></div><p>The answer only appears after the team combines the visible clue, the Braille clue, and the manual rule.</p><div className="tutorial-text-rule"><MessageCircle /><span><b>OPTIONAL TEXT CHAT</b> BLIND and DEAF may type. MUTE reads only and uses signals.</span></div></section><section className="tutorial-page"><h3>SIGNAL LOOP</h3><ol className="tutorial-steps"><li><b>1</b><span>DEAF reports the light colors, cable colors, or display.</span></li><li><b>2</b><span>BLIND reports cable count or Braille patterns.</span></li><li><b>3</b><span>MUTE checks the manual and sends a number or signal.</span></li><li><b>4</b><span>DEAF confirms the signal and guides BLIND to the correct control.</span></li></ol><div className="tutorial-chat-demo"><MessageCircle /><span>0–10</span><span>👍 👎 🔁 👆 👇 👈 👉</span></div><p className="tutorial-privacy-note">DEAF sees only their own typed messages. BLIND and MUTE can read messages from DEAF.</p></section></div>;
 
-  if (page === 3) return <div className="tutorial-spread"><section className="tutorial-page"><h3>MODULES I</h3><div className="tutorial-module"><Scissors /><div><b>CABLE</b><span>Combine the light, cable colors, and cable count. MUTE identifies one color; BLIND cuts that cable.</span></div></div><div className="tutorial-module"><SlidersVertical /><div><b>COLOR SLIDER</b><span>Combine the four-light order with all four Braille values. Set every switch up or down, then press ENTER.</span></div></div></section><section className="tutorial-page"><h3>MODULES II</h3><div className="tutorial-module"><ArrowUp /><div><b>DIRECTION</b><span>Combine one light with one Braille pattern. MUTE returns up, down, left, or right.</span></div></div><div className="tutorial-module"><Calculator /><div><b>CALCULATOR</b><span>Enter the equation result first. Then combine its odd/even result with the new light and press one final Braille key.</span></div></div></section></div>;
+  if (page === 3) return <div className="tutorial-spread"><section className="tutorial-page"><h3>EASY MODULES I</h3><div className="tutorial-module"><Scissors /><div><b>CABLE</b><span>Combine the light, cable colors, and cable count. MUTE identifies one color; BLIND cuts that cable.</span></div></div><div className="tutorial-module"><SlidersVertical /><div><b>COLOR SLIDER</b><span>Combine the four-light order with all four Braille values. Set every switch up or down, then press ENTER.</span></div></div></section><section className="tutorial-page"><h3>EASY MODULES II</h3><div className="tutorial-module"><ArrowUp /><div><b>DIRECTION</b><span>Combine one light with one Braille pattern. MUTE returns up, down, left, or right.</span></div></div><div className="tutorial-module"><Calculator /><div><b>CALCULATOR</b><span>Enter the equation result first. Then combine its odd/even result with the new light and press one final Braille key.</span></div></div></section></div>;
 
-  if (page === 4) return <div className="tutorial-spread"><section className="tutorial-page tutorial-art-page"><h3>PIANO</h3><div className="tutorial-piano-demo"><Piano /><div>{LIGHT_COLORS.map((color) => <Light key={color} color={color} />)}</div><span>{Array.from({ length: 8 }, (_, index) => <BrailleCell key={index} value={index + 1} compact />)}</span></div><p>DEAF reads the large mode light and the four colored melody lights. MUTE converts every color through the matching manual row. BLIND plays the four Braille keys in order.</p></section><section className="tutorial-page"><h3>AFTER LEVEL 10</h3><div className="tutorial-callout"><Shuffle /><div><b>INFINITE MODE</b><span>Every new suitcase chooses four different modules from all five. Clear it, ready up, and another random case begins.</span></div></div><div className="tutorial-callout danger"><TriangleAlert /><div><b>WRONG NOTE</b><span>A wrong piano key adds a strike and restarts only the four-note melody from its first note.</span></div></div></section></div>;
+  if (page === 4) return <div className="tutorial-spread"><section className="tutorial-page"><h3>LEVELS 8 TO 10</h3><div className="tutorial-module"><Compass /><div><b>SYMBOL DIAL</b><span>BLIND turns the pointer one symbol at a time. Only DEAF sees the BEEP! bubble. The lit seed light and the beeping symbol give MUTE a color; BLIND presses that button.</span></div></div><div className="tutorial-module"><Piano /><div><b>PIANO</b><span>DEAF reads the mode light and the four melody lights. MUTE converts every color through the matching manual row. BLIND plays the four Braille keys in order.</span></div></div><p className="tutorial-privacy-note">Level 8 adds the symbol dial, Level 9 the piano, Level 10 both.</p></section><section className="tutorial-page"><h3>AFTER LEVEL 10</h3><div className="tutorial-callout"><Shuffle /><div><b>INFINITE MODE</b><span>Every new suitcase chooses four different modules from all six. Clear it, ready up, and another random case begins.</span></div></div><div className="tutorial-callout danger"><TriangleAlert /><div><b>WRONG NOTE</b><span>A wrong piano key adds a strike and restarts only the four-note melody from its first note. A symbol button pressed without a beep is a strike too.</span></div></div></section></div>;
 
   return <div className="tutorial-spread"><section className="tutorial-page tutorial-art-page"><h3>READY ROOM</h3><div className="tutorial-ready-demo"><div><span>🙈</span><b>READY</b></div><div><span>🙉</span><b>READY</b></div><div><span>🙊</span><b>READY</b></div></div><p>The timer begins only after all three players ready up.</p></section><section className="tutorial-page"><h3>ROUND LOOP</h3><ol className="tutorial-steps"><li><b>1</b><span>Review the next level and swap roles if the squad wants to.</span></li><li><b>2</b><span>All three players press READY. A short countdown arms the suitcase.</span></li><li><b>3</b><span>Solve every listed module before time or strikes run out.</span></li><li><b>4</b><span>A cleared level advances. A failed level must be replayed.</span></li></ol><div className="tutorial-win-strip"><TimerReset /><b>LEVELS 1 → 10 · ∞</b><Banana /></div></section></div>;
 }
@@ -252,18 +262,21 @@ function StartScreen({ onEnter, onTest, notice }: { onEnter: (connection: RoomCo
   const [role, setRole] = useState<Role>("operator");
   const [chatEnabled, setChatEnabled] = useState(false);
   const [tutorialEnabled, setTutorialEnabled] = useState(false);
+  const [startLevelText, setStartLevelText] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const startLevel = startLevelText.trim() === "" ? 1 : Number(startLevelText);
 
   async function submit() {
     setError("");
     if (!name.trim()) return setError("Give your monkey a name.");
     if (mode === "join" && code.replace(/\W/g, "").length !== 5) return setError("Enter the five-character room code.");
+    if (mode === "create" && (!Number.isInteger(startLevel) || startLevel < 1 || startLevel > 11)) return setError("Start level must be a whole number from 1 to 11.");
     setBusy(true);
     try {
       const entered = mode === "join"
         ? await joinRoom({ code, name, role })
-        : await createRoom({ name, role, chatEnabled, tutorialEnabled });
+        : await createRoom({ name, role, chatEnabled, tutorialEnabled, startLevel });
       const data = entered.snapshot as unknown as RoomSnapshot;
       try { sessionStorage.setItem(SESSION_KEY, JSON.stringify({ code: data.room.code })); } catch { /* Private windows may block storage; the game still works. */ }
       onEnter(entered.connection, data);
@@ -283,7 +296,7 @@ function StartScreen({ onEnter, onTest, notice }: { onEnter: (connection: RoomCo
       </header>
       <section className="start-grid">
         <div className="brief-panel">
-          <Badge className="brief-badge">3 PLAYERS · 10 LEVELS · 5 MODULES · ∞</Badge>
+          <Badge className="brief-badge">3 PLAYERS · 10 LEVELS · 6 MODULES · ∞</Badge>
           <h2>Every monkey holds one piece of the answer.</h2>
           <p>Clear ten suitcase levels together, then keep going in infinite mode. Every round starts only after all three roles ready up.</p>
           <div className="mini-roles">
@@ -306,7 +319,7 @@ function StartScreen({ onEnter, onTest, notice }: { onEnter: (connection: RoomCo
           <Input id="player-name" value={name} onChange={(event) => setName(event.target.value.slice(0, 20))} placeholder="Constantine" className="game-input" autoComplete="nickname" />
           <span className="field-label">Choose your assignment</span>
           <RoleChoice value={role} onChange={setRole} />
-          {mode === "create" && <div className="room-option-stack"><label className="chat-mode-toggle"><span><b>OPTIONAL TEXT CHAT</b><small>{chatEnabled ? "BLIND and DEAF can type during the game." : "Role signals stay limited to the existing tools."}</small></span><Switch checked={chatEnabled} onCheckedChange={setChatEnabled} aria-label="Enable text chat" /></label><label className="chat-mode-toggle tutorial-mode-toggle"><span><b>LEVEL 0 · PRACTICE ROUND</b><small>{tutorialEnabled ? "One untimed cable round to learn the relay, then Level 1." : "Skip practice and start at Level 1."}</small></span><Switch checked={tutorialEnabled} onCheckedChange={setTutorialEnabled} aria-label="Level 0 practice round before Level 1" /></label></div>}
+          {mode === "create" && <div className="room-option-stack"><label className="chat-mode-toggle"><span><b>OPTIONAL TEXT CHAT</b><small>{chatEnabled ? "BLIND and DEAF can type during the game." : "Role signals stay limited to the existing tools."}</small></span><Switch checked={chatEnabled} onCheckedChange={setChatEnabled} aria-label="Enable text chat" /></label><label className="chat-mode-toggle tutorial-mode-toggle"><span><b>LEVEL 0 · PRACTICE ROUND</b><small>{tutorialEnabled ? `One untimed cable round to learn the relay, then Level ${startLevel || 1}.` : `Skip practice and start at Level ${startLevel || 1}.`}</small></span><Switch checked={tutorialEnabled} onCheckedChange={setTutorialEnabled} aria-label="Level 0 practice round before Level 1" /></label><label className="chat-mode-toggle start-level-field" htmlFor="start-level"><span><b>START AT LEVEL</b><small>Optional. 1 to 10, or 11 for infinite mode. Blank means Level 1.</small></span><Input id="start-level" type="number" inputMode="numeric" min={1} max={11} step={1} value={startLevelText} onChange={(event) => setStartLevelText(event.target.value.slice(0, 2))} placeholder="1" className="game-input start-level-input" aria-label="Start at level" /></label></div>}
           {error && <p className="form-error" role="alert">{error}</p>}
           <Button onClick={submit} disabled={busy} className="launch-button">{busy ? "Opening case…" : mode === "create" ? "Create squad" : "Claim seat"}<span aria-hidden="true">→</span></Button>
           <div className="entry-links"><TutorialButton className="rules-link" label="Rules" /><button type="button" className="text-link" onClick={onTest}><Wrench /> Try it alone</button></div>
@@ -381,10 +394,10 @@ function Lobby({ data, onData, onTest, onLeave, banner }: { data: RoomSnapshot; 
       <div className="seat-grid">{slots.map((player, index) => <RoleChip player={player} role={ROLES[index]} you={player?.role === data.player.role} key={ROLES[index]} />)}</div>
       <RelayDemo />
       <SetupChecklist />
-      <div className="lobby-option-grid"><div className="lobby-chat-status" data-enabled={data.room.game.chatEnabled}><MessageCircle /><b>TEXT CHAT {data.room.game.chatEnabled ? "ON" : "OFF"}</b><span>{data.room.game.chatEnabled ? "BLIND + DEAF can type" : "Voice only"}</span></div><div className="lobby-chat-status tutorial-lobby-status" data-enabled={data.room.game.tutorialEnabled}><CircleHelp /><b>LEVEL 0 {data.room.game.tutorialEnabled ? "ON" : "OFF"}</b><span>{data.room.game.tutorialEnabled ? "Practice round first" : "Straight to Level 1"}</span></div></div>
+      <div className="lobby-option-grid"><div className="lobby-chat-status" data-enabled={data.room.game.chatEnabled}><MessageCircle /><b>TEXT CHAT {data.room.game.chatEnabled ? "ON" : "OFF"}</b><span>{data.room.game.chatEnabled ? "BLIND + DEAF can type" : "Voice only"}</span></div><div className="lobby-chat-status tutorial-lobby-status" data-enabled={data.room.game.tutorialEnabled}><CircleHelp /><b>LEVEL 0 {data.room.game.tutorialEnabled ? "ON" : "OFF"}</b><span>{data.room.game.tutorialEnabled ? "Practice round first" : `Straight to Level ${data.room.startLevel}`}</span></div>{data.room.startLevel > 1 && <div className="lobby-chat-status start-level-status" data-enabled="true"><Play /><b>START AT {data.room.startLevel === 11 ? "∞" : `LEVEL ${data.room.startLevel}`}</b><span>{levelDefinition(data.room.startLevel).title}</span></div>}</div>
       {banner && <p className="room-notice" role="status">{banner}</p>}
       {error && <p className="form-error" role="alert">{error}</p>}
-      {data.room.isHost ? <Button className="launch-button" disabled={!full || busy} onClick={start}><Play /> {busy ? "Staging…" : full ? data.room.game.tutorialEnabled ? "Start Level 0 practice" : "Open Level 1 ready room" : `Waiting for ${missing} more player${missing === 1 ? "" : "s"}`}</Button> : <div className="waiting-bar"><span /> {full ? "The host starts the game." : "The host starts once every seat is filled."}</div>}
+      {data.room.isHost ? <Button className="launch-button" disabled={!full || busy} onClick={start}><Play /> {busy ? "Staging…" : full ? data.room.game.tutorialEnabled ? "Start Level 0 practice" : `Open Level ${data.room.startLevel === 11 ? "∞" : data.room.startLevel} ready room` : `Waiting for ${missing} more player${missing === 1 ? "" : "s"}`}</Button> : <div className="waiting-bar"><span /> {full ? "The host starts the game." : "The host starts once every seat is filled."}</div>}
       <div className="entry-links lobby-links"><TutorialButton className="rules-link" label="Rules" /><button type="button" className="text-link" onClick={onTest}><Wrench /> Test alone</button><button type="button" className="text-link" onClick={onLeave}><LogOut /> Leave room</button></div>
     </div></main>
   );
@@ -496,6 +509,47 @@ function PianoModule({ module, vision, act, busy }: { module: PianoView; vision:
   );
 }
 
+function SymbolGlyph({ symbol }: { symbol: SymbolKey }) {
+  const common = { viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 2.4, strokeLinecap: "round" as const, strokeLinejoin: "round" as const, "aria-hidden": true };
+  if (symbol === "PHI") return <svg {...common}><ellipse cx="12" cy="12" rx="7.5" ry="5.5" /><path d="M12 3v18" /></svg>;
+  if (symbol === "STAR") return <svg {...common}><polygon points="12 2.5 14.9 9 22 9.6 16.6 14.4 18.2 21.5 12 17.8 5.8 21.5 7.4 14.4 2 9.6 9.1 9" /></svg>;
+  if (symbol === "HOURGLASS") return <svg {...common}><path d="M6 3h12M6 21h12M7.5 3c0 5 4.5 6.5 4.5 9s-4.5 4-4.5 9M16.5 3c0 5-4.5 6.5-4.5 9s4.5 4 4.5 9" /></svg>;
+  return <svg {...common}><path d="M12 4.5l7.5 11.5h-15z" /><path d="M3 21h18" /></svg>;
+}
+
+// Symbol dial: four seed lamps, a dial with four symbols and a pointer BLIND
+// turns from the center, three big buttons. The BEEP! bubble is DEAF-only.
+function SymbolModule({ module, vision, act, busy }: { module: SymbolView; vision: "blind" | "color"; act?: (action: ModuleAction, value?: number | string) => void; busy: boolean }) {
+  const buttonCount = module.buttons?.length ?? module.buttonCount ?? 3;
+  // Keep turning clockwise even when the pointer wraps from the last symbol to the first.
+  const [turns, setTurns] = useState(module.pointer);
+  const lastPointer = useRef(module.pointer);
+  useEffect(() => {
+    const delta = (module.pointer - lastPointer.current + SYMBOLS.length) % SYMBOLS.length;
+    lastPointer.current = module.pointer;
+    if (delta) setTurns((current) => current + delta);
+  }, [module.pointer]);
+  const current = SYMBOLS[module.pointer] ?? SYMBOLS[0];
+  return (
+    <section className="case-bay symbol-module" data-anchor="symbol" data-solved={module.solved} data-beep={Boolean(module.beep)} aria-label="Symbol dial module">
+      <div className="symbol-seeds" data-anchor="symbol-seeds" aria-label={vision === "color" && module.seed ? `Seed light ${module.seed} of 4 is lit` : "Four seed lights"}>
+        {[1, 2, 3, 4].map((seed) => <i key={seed} data-lit={vision === "color" && module.seed === seed} aria-hidden="true" />)}
+      </div>
+      <div className="symbol-dial-well"><div className="symbol-dial" data-anchor="symbol-dial" aria-label={`Pointer on the ${SYMBOL_NAMES[current]} symbol`}>
+        {SYMBOLS.map((symbol, index) => <span key={symbol} className="symbol-glyph" data-position={index} data-current={index === module.pointer} aria-label={`${SYMBOL_NAMES[symbol]} symbol`}><SymbolGlyph symbol={symbol} /></span>)}
+        <i className="symbol-pointer" style={{ transform: `rotate(${turns * 90}deg)` }} aria-hidden="true" />
+        <button type="button" className="symbol-rotate" data-anchor="symbol-rotate" onClick={() => act?.("symbol-rotate")} disabled={!act || busy || module.solved} aria-label="Turn the pointer to the next symbol"><RotateCw /></button>
+      </div>{vision === "color" && module.beep && <span className="symbol-beep" role="status" aria-live="polite"><b>BEEP!</b></span>}</div>
+      <div className="symbol-buttons" data-anchor="symbol-buttons" aria-label={`${buttonCount} buttons`}>
+        {Array.from({ length: buttonCount }, (_, index) => {
+          const color = module.buttons?.[index];
+          return <button type="button" key={index} data-anchor={`symbol-button-${index + 1}`} data-color={vision === "color" && color ? color.toLowerCase() : "hidden"} data-pressed={module.pressed === index} onClick={() => act?.("symbol-press", index)} disabled={!act || busy || module.solved} aria-label={vision === "color" && color ? `${color.toLowerCase()} button ${index + 1}` : `Button ${index + 1}`} />;
+        })}
+      </div>
+    </section>
+  );
+}
+
 const clamp01 = (value: number) => Math.max(0, Math.min(1, Number.isFinite(value) ? value : 0.5));
 
 function findAnchor(container: HTMLElement, anchor: string) {
@@ -588,6 +642,7 @@ function SuitcaseBomb({ game, vision, act, busy = false, cursor, onCursorMove }:
     if (module === "slider") return <SliderModule key={module} module={game.modules.slider} vision={vision} act={act} busy={busy} />;
     if (module === "direction") return <DirectionModule key={module} module={game.modules.direction} vision={vision} act={act} busy={busy} />;
     if (module === "calculator") return <CalculatorModule key={module} module={game.modules.calculator} vision={vision} act={act} busy={busy} />;
+    if (module === "symbol") return <SymbolModule key={module} module={game.modules.symbol} vision={vision} act={act} busy={busy} />;
     return <PianoModule key={module} module={game.modules.piano} vision={vision} act={act} busy={busy} />;
   };
   return (
@@ -746,6 +801,13 @@ function PianoManual() {
   return <section className="manual-page wide-manual-page" data-module="piano"><div className="manual-page-title"><Piano /></div><ManualSteps steps={[<span className="visual-pair" key="mode"><Piano /><Light color={mode} /></span>, <span className="visual-light-row" key="melody">{LIGHT_COLORS.map((color) => <Light key={color} color={color} />)}</span>, <span className="manual-piano-sequence" key="keys">{[1, 3, 5, 7].map((key) => <span key={key}><BrailleCell value={key} compact /><b>{key}</b></span>)}</span>]} /><ManualRulePager row={row} count={LIGHT_COLORS.length} onChange={setRow} /><div className="piano-rule-focus"><div className="piano-rule-mode"><Piano /><Light color={mode} /></div><div className="piano-rule-grid">{LIGHT_COLORS.map((color) => { const key = PIANO_RULES[mode][color]; return <div key={color}><Light color={color} /><ArrowRight /><span><BrailleCell value={key} compact /><b>{key}</b></span></div>; })}</div></div></section>;
 }
 
+function SymbolManual() {
+  const [row, setRow] = useState(0);
+  const seed = (row + 1) as 1 | 2 | 3 | 4;
+  const seeds = (lit: number) => <span className="manual-seed-lamps" aria-label={`Seed light ${lit} lit`}>{[1, 2, 3, 4].map((index) => <i key={index} data-lit={index === lit} />)}</span>;
+  return <section className="manual-page wide-manual-page" data-module="symbol"><div className="manual-page-title"><Compass /></div><ManualSteps steps={[<span className="visual-pair" key="seed">{seeds(2)}</span>, <span className="visual-pair manual-beep-step" key="beep"><span className="manual-dial-mini"><SymbolGlyph symbol="STAR" /></span><em>BEEP!</em></span>, <span className="visual-pair" key="button"><Light color="BLUE" /><ArrowRight /><span className="manual-symbol-buttons"><i /><i data-hit="true" /><i /></span></span>]} /><ManualRulePager row={row} count={4} onChange={setRow} /><div className="symbol-rule-focus"><div className="symbol-rule-seed">{seeds(seed)}<b>SEED {seed}</b></div><div className="symbol-rule-grid">{SYMBOLS.map((symbol) => <div key={symbol}><span className="symbol-rule-glyph"><SymbolGlyph symbol={symbol} /></span><ArrowRight /><Light color={SYMBOL_RULES[seed][symbol]} /></div>)}</div></div></section>;
+}
+
 function SpecialistPanel({ game, practice = false }: { game: PublicGameView; practice?: boolean }) {
   const pages = [
     { key: "cable" as const, icon: Scissors, component: <CableManual highlight={practice ? { count: PRACTICE_CABLE.count, light: PRACTICE_CABLE.light } : undefined} /> },
@@ -753,6 +815,7 @@ function SpecialistPanel({ game, practice = false }: { game: PublicGameView; pra
     { key: "direction" as const, icon: ArrowUp, component: <DirectionManual /> },
     { key: "calculator" as const, icon: Calculator, component: <CalculatorManual /> },
     { key: "piano" as const, icon: Piano, component: <PianoManual /> },
+    { key: "symbol" as const, icon: Compass, component: <SymbolManual /> },
   ];
   const firstActivePage = Math.max(0, pages.findIndex((manualPage) => game.activeModules.includes(manualPage.key)));
   const [page, setPage] = useState(firstActivePage);
@@ -765,11 +828,11 @@ function RoundWaitingRoom({ data, onReady, onSwitchRole, busy, developer }: { da
   const game = data.room.game;
   const role = data.player.role;
   const meta = ROLE_META[role];
-  const nextLevel = game.lastResult === "cleared" ? nextLevelAfterClear(game.level) : game.level;
+  const nextLevel = game.lastResult !== "cleared" ? game.level : game.level === 0 ? (data.room.startLevel ?? 1) : nextLevelAfterClear(game.level);
   const next = levelDefinition(nextLevel);
   const self = data.room.players.find((player) => player.role === role);
   // The first ready room of a campaign briefs each player on their role.
-  const briefing = game.lastResult === "new" && nextLevel <= 1;
+  const briefing = game.lastResult === "new";
   const retry = game.lastResult === "timeout" || game.lastResult === "strikes";
   const heading = game.lastResult === "timeout" ? "TIME EXPIRED" : game.lastResult === "strikes" ? "THREE STRIKES" : game.lastResult === "cleared" ? (game.level === 0 ? "PRACTICE DONE" : game.level === 10 ? "CAMPAIGN CLEAR" : game.level === 11 ? "INFINITE CASE CLEAR" : `LEVEL ${game.level} CLEAR`) : "CAMPAIGN READY";
   const levelLabel = next.level === 11 ? "∞" : String(next.level);
@@ -816,6 +879,11 @@ const COACH_LINES: Record<ModuleKey, Record<Role, string>> = {
     operator: "Play the four keys DEAF tells you, in order. Hover a key to see its number. A wrong key restarts the tune.",
     observer: "Tell MUTE the color of the big mode light, then the four small melody colors in order. Pass MUTE's four numbers to BLIND.",
     specialist: "Flip to the page for the mode light's color. Turn each melody color into a key number and sign all four in order.",
+  },
+  symbol: {
+    operator: "Click the middle of the dial to turn the pointer one symbol at a time. Only DEAF can see the beep, so stop when DEAF says stop. Then press the button DEAF tells you.",
+    observer: "Watch for the BEEP! bubble while BLIND turns the dial and shout stop. Tell MUTE which of the four seed lights is lit, which symbol the pointer is on, and the three button colors left to right. Then tell BLIND which button.",
+    specialist: "Flip to the page for the lit seed light DEAF names. Find the symbol that beeped to get a color. Sign where that color sits among the three buttons, left to right.",
   },
 };
 
@@ -929,6 +997,10 @@ const NUDGES: Record<ModuleKey, Record<Exclude<RelayStage, "done">, Partial<Reco
   piano: {
     describe: { observer: "Say the big mode light's color, then the four small melody colors in order.", specialist: "Flip to the page for the mode light. Turn each melody color into a key number and sign all four in order.", operator: "Wait for DEAF to give you four key numbers." },
     operate: { observer: "Tell BLIND the four key numbers in order.", operator: "Play the four keys DEAF says, in order." },
+  },
+  symbol: {
+    describe: { observer: "Shout stop when the BEEP! bubble appears. Then tell MUTE the lit seed light, the symbol under the pointer, and the three button colors left to right.", specialist: "Flip to the page for the lit seed light. Find the beeping symbol's color and sign its button position, 1 to 3.", operator: "Click the middle of the dial to turn the pointer, one symbol at a time, until DEAF says stop." },
+    operate: { observer: "Tell BLIND which button to press: left, middle or right.", operator: "Press the button DEAF says." },
   },
 };
 
@@ -1121,7 +1193,7 @@ function DeveloperMode({ onExit }: { onExit: () => void }) {
     const roleGame = publicStateForRole(state, role, `developer-${role}`) as unknown as PublicGameView;
     return {
       room: {
-        code: "LOCAL", status: "playing", version: 1, isHost: true, readyCount: 0,
+        code: "LOCAL", status: "playing", version: 1, isHost: true, startLevel: 1, readyCount: 0,
         players: ROLES.map((item) => ({ name: item === role ? "Test Player" : `${ROLE_META[item].short} Preview`, role: item, online: true, ready: false })),
         game: role === "observer" ? { ...roleGame, operatorCursor: cursor, muteSignal } : roleGame,
       },
@@ -1137,6 +1209,7 @@ function DeveloperMode({ onExit }: { onExit: () => void }) {
     if (enabled.includes("direction")) lines.push(`DIRECTION · ${state.modules.direction.target}`);
     if (enabled.includes("calculator")) lines.push(`CALCULATOR · ${state.modules.calculator.answer}, THEN ${state.modules.calculator.targetDigit}`);
     if (enabled.includes("piano")) lines.push(`PIANO · ${state.modules.piano.target.join(" → ")}`);
+    if (enabled.includes("symbol")) lines.push(`SYMBOL · SEED ${state.modules.symbol.seed} · ${state.modules.symbol.target} → ${state.modules.symbol.targetColor} (BUTTON ${state.modules.symbol.buttons.indexOf(state.modules.symbol.targetColor) + 1})`);
     return lines;
   }, [state]);
 

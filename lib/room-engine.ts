@@ -39,6 +39,8 @@ export type EngineData = {
   code: string;
   status: RoomStatus;
   hostId: string;
+  // Campaign level the host chose to begin at (1 to 11); Level 0 practice still comes first when enabled.
+  startLevel: number;
   createdAt: number;
   version: number;
   state: GameState;
@@ -57,6 +59,7 @@ export type EngineSnapshot = {
     status: RoomStatus;
     version: number;
     isHost: boolean;
+    startLevel: number;
     readyCount: number;
     players: Array<{ name: string; role: Role; online: boolean; ready: boolean }>;
     game: ReturnType<typeof publicStateForRole>;
@@ -87,6 +90,8 @@ const MODULE_ACTIONS: ModuleAction[] = [
   "calculator-clear",
   "calculator-enter",
   "piano-key",
+  "symbol-rotate",
+  "symbol-press",
 ];
 
 export function cleanCode(value: unknown) {
@@ -101,6 +106,11 @@ export function cleanName(value: unknown) {
     .replace(/[<>]/g, "")
     .trim()
     .slice(0, 20);
+}
+
+export function cleanStartLevel(value: unknown) {
+  const level = Math.round(Number(value));
+  return Number.isFinite(level) ? Math.min(11, Math.max(1, level)) : 1;
 }
 
 export function isRole(value: unknown): value is Role {
@@ -127,12 +137,14 @@ export class RoomEngine {
     this.data = data;
   }
 
-  static create(options: { code: string; hostId: string; name: string; role: Role; chatEnabled: boolean; tutorialEnabled: boolean; now: number }) {
-    const state = createGameState(1, "waiting", "new", options.chatEnabled, [], options.tutorialEnabled);
+  static create(options: { code: string; hostId: string; name: string; role: Role; chatEnabled: boolean; tutorialEnabled: boolean; startLevel?: number; now: number }) {
+    const startLevel = cleanStartLevel(options.startLevel ?? 1);
+    const state = createGameState(startLevel, "waiting", "new", options.chatEnabled, [], options.tutorialEnabled);
     return new RoomEngine({
       code: options.code,
       status: "lobby",
       hostId: options.hostId,
+      startLevel,
       createdAt: options.now,
       version: 1,
       state,
@@ -146,6 +158,7 @@ export class RoomEngine {
       throw new Error("The saved room could not be read.");
     }
     normalizeFeed(data.state);
+    data.startLevel = cleanStartLevel(data.startLevel ?? 1);
     return new RoomEngine(data);
   }
 
@@ -288,10 +301,10 @@ export class RoomEngine {
       return fail("All three roles must be filled.");
     }
     const previous = this.data.state;
-    const state = createGameState(previous.tutorialEnabled ? 0 : 1, "waiting", "new", previous.chatEnabled, [], previous.tutorialEnabled);
+    const state = createGameState(previous.tutorialEnabled ? 0 : this.data.startLevel, "waiting", "new", previous.chatEnabled, [], previous.tutorialEnabled);
     resetLog(state, previous.tutorialEnabled
       ? "Practice round staged. All three monkeys ready up for Level 0."
-      : "Campaign staged. All three monkeys must ready up for Level 1.");
+      : `Campaign staged. All three monkeys must ready up for Level ${this.data.startLevel}.`);
     this.data.state = state;
     this.data.status = "playing";
     this.resetReady();
@@ -321,7 +334,7 @@ export class RoomEngine {
       this.data.seats.every((candidate) => candidate.readyLevel === state.level);
     if (!everyoneReady) return { ok: true };
 
-    const nextLevel = state.lastResult === "cleared" ? nextLevelAfterClear(state.level) : state.level;
+    const nextLevel = state.lastResult !== "cleared" ? state.level : state.level === 0 ? this.data.startLevel : nextLevelAfterClear(state.level);
     const next = createGameState(nextLevel, "playing", "new", state.chatEnabled, [], state.tutorialEnabled);
     next.startAt = now + 3_000;
     resetLog(next, `${levelDefinition(nextLevel).title}: Level ${nextLevel} armed.`);
@@ -365,6 +378,7 @@ export class RoomEngine {
         status: this.data.status,
         version: this.data.version,
         isHost: this.data.hostId === id,
+        startLevel: this.data.startLevel,
         readyCount: seats.filter((candidate) => candidate.readyLevel === state.level).length,
         players: seats.map((candidate) => ({
           name: candidate.name,

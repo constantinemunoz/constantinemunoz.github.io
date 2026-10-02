@@ -21,8 +21,8 @@ const HOST = "uid-host";
 const DEAF = "uid-deaf";
 const MUTE = "uid-mute";
 
-function newRoom({ chatEnabled = false, tutorialEnabled = false } = {}) {
-  const engine = RoomEngine.create({ code: "BAN42", hostId: HOST, name: "Ana", role: "operator", chatEnabled, tutorialEnabled, now });
+function newRoom({ chatEnabled = false, tutorialEnabled = false, startLevel = undefined } = {}) {
+  const engine = RoomEngine.create({ code: "BAN42", hostId: HOST, name: "Ana", role: "operator", chatEnabled, tutorialEnabled, startLevel, now });
   engine.setOnline([HOST, DEAF, MUTE]);
   ok(engine.handle(DEAF, { action: "join", name: "Ben", role: "observer" }, now), "DEAF joins");
   ok(engine.handle(MUTE, { action: "join", name: "Cat", role: "specialist" }, now), "MUTE joins");
@@ -168,6 +168,32 @@ function cutCorrectCable(engine, id = HOST) {
   now += 3_000;
   ok(cutCorrectCable(resumed, "uid-blind-2"), "play continues after takeover");
   assert(resumed.data.state.lastResult === "cleared", "the level clears under the new host");
+}
+
+// --- Start at a chosen level ------------------------------------------------------
+{
+  const engine = newRoom({ startLevel: 8 });
+  assert(engine.data.startLevel === 8 && engine.snapshotFor(HOST).room.startLevel === 8, "the chosen start level is stored and shared");
+  ok(engine.handle(HOST, { action: "start" }, now), "host starts at Level 8");
+  assert(engine.data.state.level === 8 && engine.data.state.phase === "waiting" && /Level 8/.test(engine.data.state.actionLog.at(-1).text), "start opens the ready room for the chosen level");
+  readyAll(engine);
+  assert(engine.data.state.level === 8 && engine.data.state.phase === "playing" && engine.data.state.activeModuleKeys.includes("symbol"), "the chosen level arms with the symbol dial");
+  assert(newRoom({ startLevel: 99 }).data.startLevel === 11, "start levels are clamped to the infinite case");
+  assert(newRoom({ startLevel: "nope" }).data.startLevel === 1, "a bad start level falls back to Level 1");
+
+  const practice = newRoom({ tutorialEnabled: true, startLevel: 5 });
+  ok(practice.handle(HOST, { action: "start" }, now), "host starts practice before Level 5");
+  assert(practice.data.state.level === 0, "Level 0 still comes first when practice is on");
+  readyAll(practice);
+  now += 3_000;
+  ok(cutCorrectCable(practice), "practice cable");
+  assert(practice.data.state.lastResult === "cleared", "Level 0 clears before the chosen level");
+  readyAll(practice);
+  assert(practice.data.state.level === 5 && practice.data.state.phase === "playing", "after Level 0 the campaign jumps to the chosen level");
+
+  const legacy = JSON.parse(engine.serialize());
+  delete legacy.startLevel;
+  assert(RoomEngine.restore(JSON.stringify(legacy)).data.startLevel === 1, "old saved rooms default to Level 1");
 }
 
 // --- Level 0 practice round -----------------------------------------------------
