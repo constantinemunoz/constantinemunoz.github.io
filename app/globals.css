@@ -1911,7 +1911,6 @@ html, body { width: 100%; height: 100%; overflow: hidden; overscroll-behavior: n
 .bomb-suitcase[data-vision="blind"] .piano-progress i[data-entered="true"] { background: #fff; }
 
 /* Pictographic piano manual: mode light -> melody light -> Braille key. */
-.manual-pagination > div { grid-template-columns: repeat(5, minmax(0, 1fr)); }
 .manual-page[data-module="piano"] .manual-quick-steps { flex: 0 0 auto; }
 .manual-piano-sequence { display: flex; align-items: center; justify-content: center; gap: 5px; }
 .manual-piano-sequence > span,
@@ -2474,3 +2473,120 @@ html, body { width: 100%; height: 100%; overflow: hidden; overscroll-behavior: n
 .role-switch-note b { white-space: nowrap; }
 /* Phones: let the manual scroll instead of clipping the lower table rows. */
 @media (max-width: 780px) { .manual-pages { overflow-y: auto; } }
+
+/* Symbol dial module: four seed lamps, a dial BLIND turns from the center, three
+   colored buttons. The BEEP! bubble is drawn only on DEAF's screen. */
+.symbol-module {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-rows: minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  background: #3b4252;
+}
+.symbol-seeds { display: grid; gap: 7px; padding: 7px 6px; border: 3px solid #121412; border-radius: 8px; background: #22262e; }
+.symbol-seeds i { display: block; width: 18px; height: 18px; border: 2px solid #0d0f0d; border-radius: 3px; background: #5a5f6a; box-shadow: inset 0 0 0 2px rgb(255 255 255 / .12); }
+.symbol-seeds i[data-lit="true"] { background: #ffd33d; box-shadow: 0 0 0 2px #fff3a8, 0 0 12px #ffd33d; }
+/* The well is a size container, so the dial can be a circle as big as the space allows in either axis. */
+.symbol-dial-well { position: relative; container-type: size; align-self: stretch; justify-self: stretch; min-width: 0; min-height: 0; display: grid; place-items: center; }
+.symbol-dial { position: relative; width: min(100cqw, 100cqh, 230px); aspect-ratio: 1; border: 4px solid #121412; border-radius: 50%; background: radial-gradient(circle at 50% 42%, #f1eee2, #cfcbbd 70%, #b7b3a4); box-shadow: inset 0 0 0 3px #7f7b6d, 0 5px 0 #121412; }
+.symbol-glyph { position: absolute; width: 22%; aspect-ratio: 1; display: grid; place-items: center; color: #15181a; }
+.symbol-glyph svg { width: 82%; height: 82%; }
+.symbol-glyph[data-position="0"] { top: 4%; left: 50%; transform: translateX(-50%); }
+.symbol-glyph[data-position="1"] { top: 50%; right: 4%; transform: translateY(-50%); }
+.symbol-glyph[data-position="2"] { bottom: 4%; left: 50%; transform: translateX(-50%); }
+.symbol-glyph[data-position="3"] { top: 50%; left: 4%; transform: translateY(-50%); }
+.symbol-glyph[data-current="true"] { color: #000; filter: drop-shadow(0 0 3px rgb(255 255 255 / .9)); }
+.symbol-pointer { position: absolute; left: 50%; bottom: 50%; width: 7%; height: 36%; margin-left: -3.5%; border: 2px solid #121412; border-radius: 999px 999px 3px 3px; background: linear-gradient(#f2534f, #b7221e); box-shadow: 0 0 0 1px rgb(255 255 255 / .35); transform-origin: 50% 100%; transition: transform .35s cubic-bezier(.3, 1.4, .5, 1); }
+.symbol-pointer::after { content: ""; position: absolute; left: 50%; top: -9px; width: 0; height: 0; border: 8px solid transparent; border-bottom: 10px solid #f2534f; border-top: 0; transform: translateX(-50%); }
+.symbol-rotate { position: absolute; left: 50%; top: 50%; width: 32%; aspect-ratio: 1; display: grid; place-items: center; border: 3px solid #121412; border-radius: 50%; background: #2a3f58; color: #fff; box-shadow: 0 4px 0 #121412, inset 0 0 0 2px rgb(255 255 255 / .18); transform: translate(-50%, -50%); }
+.symbol-rotate svg { width: 60%; height: 60%; stroke-width: 2.6; }
+.symbol-rotate:not(:disabled):hover { background: #355576; }
+.symbol-rotate:not(:disabled):active { transform: translate(-50%, -50%) translateY(3px); box-shadow: 0 1px 0 #121412; }
+.symbol-buttons { display: grid; gap: 9px; }
+.symbol-buttons button { width: 46px; height: 46px; border: 3px solid #121412; border-radius: 8px; background: #d8dad4; box-shadow: 0 4px 0 #121412, inset 0 0 0 3px rgb(255 255 255 / .28); }
+.symbol-buttons button[data-color="red"] { background: #ef4038; }
+.symbol-buttons button[data-color="yellow"] { background: #f6d12f; }
+.symbol-buttons button[data-color="green"] { background: #33cf5b; }
+.symbol-buttons button[data-color="blue"] { background: #2874e6; }
+.symbol-buttons button[data-pressed="true"] { transform: translateY(3px); box-shadow: 0 1px 0 #121412, inset 0 0 0 3px rgb(0 0 0 / .25); }
+.symbol-buttons button:not(:disabled):active { transform: translateY(3px); box-shadow: 0 1px 0 #121412; }
+.symbol-module[data-beep="true"] .symbol-dial { box-shadow: inset 0 0 0 3px #7f7b6d, 0 5px 0 #121412, 0 0 0 4px #ffd33d; }
+.symbol-beep { position: absolute; z-index: 4; right: 0; top: 0; display: grid; place-items: center; min-width: 72px; padding: 7px 11px; border: 3px solid #121412; border-radius: 14px 14px 14px 3px; background: #fff35c; color: #121412; box-shadow: 3px 3px 0 #121412; transform-origin: 0 100%; animation: symbol-beep-pop .22s cubic-bezier(.2, 1.6, .5, 1) both, symbol-beep-flash .9s steps(1) .22s infinite; pointer-events: none; }
+.symbol-beep::before { content: ""; position: absolute; left: -3px; bottom: -14px; width: 0; height: 0; border: 9px solid transparent; border-top: 14px solid #121412; border-left-width: 2px; }
+.symbol-beep::after { content: ""; position: absolute; left: 1px; bottom: -8px; width: 0; height: 0; border: 6px solid transparent; border-top: 10px solid #fff35c; border-left-width: 1px; }
+.symbol-beep b { font: 950 clamp(.9rem, 1.6vw, 1.25rem)/1 var(--font-mono); letter-spacing: .05em; white-space: nowrap; }
+@keyframes symbol-beep-pop { from { transform: scale(.2) rotate(-12deg); opacity: 0; } to { transform: scale(1) rotate(0); opacity: 1; } }
+@keyframes symbol-beep-flash { 0%, 100% { background: #fff35c; } 50% { background: #ffd33d; } }
+.bomb-suitcase[data-vision="blind"] .symbol-module { background: #000; }
+.bomb-suitcase[data-vision="blind"] .symbol-seeds { border-color: #fff; background: #000; }
+.bomb-suitcase[data-vision="blind"] .symbol-seeds i { border-color: #fff; background: #000; box-shadow: none; }
+.bomb-suitcase[data-vision="blind"] .symbol-dial { border-color: #fff; background: #000; box-shadow: inset 0 0 0 2px #555; }
+.bomb-suitcase[data-vision="blind"] .symbol-glyph { color: #fff; filter: none; }
+.bomb-suitcase[data-vision="blind"] .symbol-pointer { border-color: #fff; background: #fff; box-shadow: none; }
+.bomb-suitcase[data-vision="blind"] .symbol-pointer::after { border-bottom-color: #fff; }
+.bomb-suitcase[data-vision="blind"] .symbol-rotate { border-color: #fff; background: #000; color: #fff; box-shadow: none; }
+.bomb-suitcase[data-vision="blind"] .symbol-rotate:not(:disabled):hover { background: #222; }
+.bomb-suitcase[data-vision="blind"] .symbol-buttons button { border-color: #fff; background: #000; box-shadow: none; }
+.bomb-suitcase[data-vision="blind"] .symbol-buttons button[data-pressed="true"] { background: #333; }
+@media (max-width: 780px) {
+  /* Narrow bays: seed lamps in a row on top, buttons in a row underneath, dial between. */
+  .symbol-module { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr) auto; justify-items: center; gap: 6px; padding: 7px 8px; }
+  .symbol-seeds { grid-auto-flow: column; gap: 5px; padding: 4px 5px; }
+  .symbol-seeds i { width: 13px; height: 13px; }
+  .symbol-buttons { grid-auto-flow: column; gap: 7px; }
+  .symbol-buttons button { width: 34px; height: 34px; }
+  .symbol-beep { min-width: 56px; padding: 5px 8px; }
+  .symbol-beep b { font-size: .85rem; }
+}
+@media (max-height: 640px) {
+  .symbol-module { gap: 8px; padding: 6px 10px; }
+  .symbol-seeds { gap: 4px; padding: 4px; }
+  .symbol-seeds i { width: 12px; height: 12px; }
+  .symbol-buttons { gap: 5px; }
+  .symbol-buttons button { width: 30px; height: 30px; }
+}
+
+/* Symbol dial manual: seed lamps -> beeping symbol -> colored button. */
+.manual-pagination > div { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+.manual-page[data-module="symbol"] .manual-quick-steps { flex: 0 0 auto; }
+.manual-seed-lamps { display: inline-grid; grid-auto-flow: column; gap: 3px; padding: 3px; border: 2px solid var(--ink); border-radius: 5px; background: #2b2f38; }
+.manual-seed-lamps i { width: 12px; height: 12px; border: 2px solid #0d0f0d; border-radius: 2px; background: #5a5f6a; }
+.manual-seed-lamps i[data-lit="true"] { background: #ffd33d; box-shadow: 0 0 5px #ffd33d; }
+.manual-dial-mini { display: inline-grid; place-items: center; width: 26px; height: 26px; border: 2px solid var(--ink); border-radius: 50%; background: #e9e5d8; color: #15181a; }
+.manual-dial-mini svg { width: 16px; height: 16px; }
+.manual-beep-step em { padding: 2px 6px; border: 2px solid var(--ink); border-radius: 8px 8px 8px 2px; background: #fff35c; font: 950 .72rem/1 var(--font-mono); }
+.manual-symbol-buttons { display: inline-grid; grid-auto-flow: column; gap: 3px; }
+.manual-symbol-buttons i { width: 14px; height: 14px; border: 2px solid var(--ink); border-radius: 3px; background: #d8dad4; }
+.manual-symbol-buttons i[data-hit="true"] { background: #2874e6; }
+.symbol-rule-focus { min-height: 0; flex: 1 1 auto; display: grid; grid-template-rows: auto minmax(0, 1fr); gap: 7px; }
+.symbol-rule-seed { min-height: 38px; display: flex; align-items: center; justify-content: center; gap: 12px; border: 2px solid var(--ink); border-radius: 11px; background: #e1eff7; }
+.symbol-rule-seed b { font: 950 .82rem/1 var(--font-mono); letter-spacing: .08em; }
+.symbol-rule-grid { min-height: 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 7px; }
+.symbol-rule-grid > div { min-width: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; padding: 8px 3px; border: 2px solid var(--ink); border-radius: 11px; background: #f7f0dc; }
+.symbol-rule-grid > div > svg { width: 18px; }
+.symbol-rule-glyph { display: grid; place-items: center; width: 34px; height: 34px; border: 2px solid var(--ink); border-radius: 50%; background: #e9e5d8; color: #15181a; }
+.symbol-rule-glyph svg { width: 22px; height: 22px; }
+@media (max-width: 780px) {
+  .symbol-rule-grid { gap: 3px; }
+  .symbol-rule-grid > div { gap: 4px; padding-inline: 1px; }
+  .manual-page[data-module="symbol"] .manual-quick-steps li > span { gap: 2px; }
+  .manual-seed-lamps { gap: 2px; padding: 2px; }
+  .manual-seed-lamps i { width: 9px; height: 9px; }
+  .manual-dial-mini { width: 20px; height: 20px; }
+  .manual-dial-mini svg { width: 12px; height: 12px; }
+  .manual-beep-step em { padding: 1px 3px; font-size: .55rem; }
+  .manual-symbol-buttons { gap: 2px; }
+  .manual-symbol-buttons i { width: 10px; height: 10px; }
+}
+@media (max-height: 640px) {
+  .symbol-rule-grid > div { padding-block: 3px; }
+  .symbol-rule-glyph { width: 26px; height: 26px; }
+}
+
+/* Optional "start at level" box on the create form, and its lobby chip. */
+.start-level-field { grid-column: 1 / -1; cursor: default; }
+.start-level-input { width: 74px; flex: none; margin: 0; text-align: center; font: 950 1.05rem/1 var(--font-mono); }
+.start-level-status b { white-space: nowrap; }

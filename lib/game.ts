@@ -24,7 +24,8 @@ export const ROLE_META: Record<Role, { name: string; monkey: string; short: stri
 
 export type LightColor = "RED" | "YELLOW" | "GREEN" | "BLUE";
 export type Direction = "UP" | "DOWN" | "LEFT" | "RIGHT";
-export type ModuleKey = "cable" | "slider" | "direction" | "calculator" | "piano";
+export type ModuleKey = "cable" | "slider" | "direction" | "calculator" | "piano" | "symbol";
+export type SymbolKey = "PHI" | "STAR" | "HOURGLASS" | "TRIANGLE";
 export type RoundPhase = "waiting" | "playing";
 export type RoundResult = "new" | "cleared" | "timeout" | "strikes";
 export type ChatMessage = {
@@ -50,8 +51,10 @@ export type LevelDefinition = {
   randomCount?: number;
 };
 
-export const CORE_MODULES: ModuleKey[] = ["cable", "slider", "direction", "calculator"];
-export const ALL_MODULES: ModuleKey[] = [...CORE_MODULES, "piano"];
+// The four "easy" modules: one clue each and a single answer.
+export const EASY_MODULES: ModuleKey[] = ["cable", "slider", "direction", "calculator"];
+export const CORE_MODULES = EASY_MODULES;
+export const ALL_MODULES: ModuleKey[] = [...EASY_MODULES, "piano", "symbol"];
 
 // Level 0 is the optional practice round: one fixed cable, no timer, no strikes.
 export const PRACTICE_CABLE = { count: 3 as const, colors: ["BLUE", "RED", "GREEN"] as LightColor[], light: "RED" as LightColor, targetColor: "BLUE" as LightColor };
@@ -65,9 +68,9 @@ export const LEVELS: LevelDefinition[] = [
   { level: 5, title: "DO THE MATH", modules: ["slider", "calculator"], durationMs: 180_000 },
   { level: 6, title: "TRIPLE THREAT", modules: ["calculator", "cable", "slider"], durationMs: 210_000 },
   { level: 7, title: "FULL SUITCASE", modules: ["cable", "slider", "direction", "calculator"], durationMs: 240_000 },
-  { level: 8, title: "REMIX CASE", modules: [], randomPool: CORE_MODULES, randomCount: 4, durationMs: 210_000 },
-  { level: 9, title: "KEY CHANGE", modules: ["piano"], randomPool: CORE_MODULES, randomCount: 1, durationMs: 210_000 },
-  { level: 10, title: "GRAND FINALE", modules: ["piano"], randomPool: CORE_MODULES, randomCount: 2, durationMs: 240_000 },
+  { level: 8, title: "BEEP TEST", modules: ["symbol"], randomPool: EASY_MODULES, randomCount: 1, durationMs: 210_000 },
+  { level: 9, title: "KEY CHANGE", modules: ["piano"], randomPool: EASY_MODULES, randomCount: 1, durationMs: 210_000 },
+  { level: 10, title: "GRAND FINALE", modules: ["symbol", "piano"], durationMs: 240_000 },
   { level: 11, title: "INFINITE MODE", modules: [], randomPool: ALL_MODULES, randomCount: 4, durationMs: 240_000 },
 ];
 
@@ -122,12 +125,24 @@ export const PIANO_RULES: Record<LightColor, Record<LightColor, number>> = {
   BLUE: { RED: 7, YELLOW: 5, GREEN: 3, BLUE: 1 },
 };
 
+// Symbol dial: the lit seed light (1 to 4) picks the row; the symbol the
+// pointer stops on (the one that beeps) picks the button color.
+export const SYMBOLS: SymbolKey[] = ["PHI", "STAR", "HOURGLASS", "TRIANGLE"];
+export const SYMBOL_NAMES: Record<SymbolKey, string> = { PHI: "phi", STAR: "star", HOURGLASS: "hourglass", TRIANGLE: "triangle" };
+export const SYMBOL_RULES: Record<1 | 2 | 3 | 4, Record<SymbolKey, LightColor>> = {
+  1: { PHI: "RED", STAR: "BLUE", HOURGLASS: "YELLOW", TRIANGLE: "GREEN" },
+  2: { PHI: "GREEN", STAR: "RED", HOURGLASS: "BLUE", TRIANGLE: "YELLOW" },
+  3: { PHI: "YELLOW", STAR: "GREEN", HOURGLASS: "RED", TRIANGLE: "BLUE" },
+  4: { PHI: "BLUE", STAR: "YELLOW", HOURGLASS: "GREEN", TRIANGLE: "RED" },
+};
+
 export const MANUAL = {
   cable: CABLE_RULES,
   direction: DIRECTION_RULES,
   slider: SLIDER_RULES,
   calculator: CALCULATOR_RULES,
   piano: PIANO_RULES,
+  symbol: SYMBOL_RULES,
 };
 
 export type GameState = {
@@ -192,6 +207,15 @@ export type GameState = {
       melody: LightColor[];
       target: number[];
       pressed: number[];
+      solved: boolean;
+    };
+    symbol: {
+      seed: 1 | 2 | 3 | 4;
+      target: SymbolKey;
+      pointer: number;
+      buttons: LightColor[];
+      targetColor: LightColor;
+      pressed: number | null;
       solved: boolean;
     };
   };
@@ -303,6 +327,22 @@ function createPianoModule() {
   };
 }
 
+function createSymbolModule() {
+  const seed = pick([1, 2, 3, 4] as const);
+  const target = pick(SYMBOLS);
+  const targetColor = SYMBOL_RULES[seed][target];
+  const extras = shuffled(COLORS.filter((color) => color !== targetColor)).slice(0, 2);
+  return {
+    seed,
+    target,
+    pointer: Math.floor(Math.random() * SYMBOLS.length),
+    buttons: shuffled([targetColor, ...extras]),
+    targetColor,
+    pressed: null,
+    solved: false,
+  };
+}
+
 export function levelDefinition(level: number) {
   return LEVELS.find((definition) => definition.level === level) ?? LEVELS.find((definition) => definition.level === 1)!;
 }
@@ -341,6 +381,7 @@ export function normalizeFeed(state: GameState) {
   state.feedSeq = Math.max(state.feedSeq ?? 0, ...state.actionLog.map((entry) => entry.seq), ...(state.messages ?? []).map((message) => message.seq ?? 0));
   state.lastSignalAt ??= null;
   state.lastActionAt ??= null;
+  state.modules.symbol ??= createSymbolModule();
   if ((state.phase as string) === "tutorial") state.phase = "waiting";
   return state;
 }
@@ -373,6 +414,7 @@ export function createGameState(level = 1, phase: RoundPhase = "waiting", lastRe
       direction: createDirectionModule(),
       calculator: createCalculatorModule(),
       piano: createPianoModule(),
+      symbol: createSymbolModule(),
     },
   };
 }
@@ -446,6 +488,15 @@ export function publicStateForRole(state: GameState, role: Role, playerId = "") 
           pressedCount: state.modules.piano.pressed.length,
           solved: state.modules.piano.solved,
         },
+        symbol: {
+          seed: state.modules.symbol.seed,
+          pointer: state.modules.symbol.pointer,
+          buttons: state.modules.symbol.buttons,
+          pressed: state.modules.symbol.pressed,
+          solved: state.modules.symbol.solved,
+          // The beep is the only clue to the hidden target, and only DEAF sees it.
+          beep: !state.modules.symbol.solved && SYMBOLS[state.modules.symbol.pointer] === state.modules.symbol.target,
+        },
       },
     };
   }
@@ -468,6 +519,7 @@ export function publicStateForRole(state: GameState, role: Role, playerId = "") 
       direction: { braille: state.modules.direction.braille, pressed: state.modules.direction.pressed, solved: state.modules.direction.solved },
       calculator: { enteredLength: state.modules.calculator.entered.length, stage: state.modules.calculator.stage, pressed: state.modules.calculator.pressed, solved: state.modules.calculator.solved },
       piano: { pressedCount: state.modules.piano.pressed.length, solved: state.modules.piano.solved },
+      symbol: { pointer: state.modules.symbol.pointer, buttonCount: state.modules.symbol.buttons.length, pressed: state.modules.symbol.pressed, solved: state.modules.symbol.solved },
     },
   };
 }
@@ -481,7 +533,7 @@ function strike(state: GameState, note: string) {
   logAction(state, `${note} Strike ${state.mistakes}/${state.maxMistakes}.`, "error");
 }
 
-export type ModuleAction = "cut-cable" | "toggle-slider" | "check-slider" | "press-direction" | "calculator-key" | "calculator-clear" | "calculator-enter" | "piano-key";
+export type ModuleAction = "cut-cable" | "toggle-slider" | "check-slider" | "press-direction" | "calculator-key" | "calculator-clear" | "calculator-enter" | "piano-key" | "symbol-rotate" | "symbol-press";
 
 export function applyModuleAction(state: GameState, action: ModuleAction, value?: number | string) {
   const enabled = new Set(activeModules(state));
@@ -572,6 +624,27 @@ export function applyModuleAction(state: GameState, action: ModuleAction, value?
         strike(state, "Wrong piano key. Melody reset.");
         piano.pressed = [];
       }
+    }
+  }
+
+  if (action === "symbol-rotate" && enabled.has("symbol")) {
+    const symbol = state.modules.symbol;
+    if (!symbol.solved) {
+      symbol.pointer = (symbol.pointer + 1) % SYMBOLS.length;
+      logAction(state, `Dial pointer on the ${SYMBOL_NAMES[SYMBOLS[symbol.pointer]]}.`);
+    }
+  }
+
+  if (action === "symbol-press" && enabled.has("symbol")) {
+    const symbol = state.modules.symbol;
+    const index = Number(value);
+    if (!symbol.solved && Number.isInteger(index) && index >= 0 && index < symbol.buttons.length) {
+      symbol.pressed = index;
+      if (SYMBOLS[symbol.pointer] !== symbol.target) strike(state, "Symbol button pressed with no beep. Keep turning the dial.");
+      else if (symbol.buttons[index] === symbol.targetColor) {
+        symbol.solved = true;
+        logAction(state, "Symbol dial accepted.");
+      } else strike(state, "Wrong symbol button.");
     }
   }
 

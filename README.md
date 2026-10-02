@@ -6,6 +6,11 @@ BOMBANANA is an unofficial three-player browser bomb-defusal drill. One player i
 (reads the full manual, can only send numbers and hand signs). Clear ten campaign levels,
 then keep going in infinite mode.
 
+Levels 1 to 7 use the four easy modules (cables, color sliders, direction, calculator).
+Level 8 adds the symbol dial, where only the Deaf player can see the module beep, Level 9
+adds the piano, and Level 10 pairs the dial with the piano. The room creator can turn on
+an untimed Level 0 practice round, or type a level to start the campaign there.
+
 Live site: <https://constantinemunoz.github.io/>
 
 ## How it is hosted

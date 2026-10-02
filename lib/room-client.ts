@@ -525,7 +525,7 @@ async function cleanupStaleRooms() {
   await Promise.all(codes.map((code) => update(ref(db), { [roomPath(code)]: null, [`roomIndex/${code}`]: null }).catch(() => undefined)));
 }
 
-export async function createRoom(options: { name: string; role: Role; chatEnabled: boolean; tutorialEnabled: boolean }) {
+export async function createRoom(options: { name: string; role: Role; chatEnabled: boolean; tutorialEnabled: boolean; startLevel?: number }) {
   try {
     const uid = await ensureUser();
     const { db } = firebase();
@@ -539,7 +539,7 @@ export async function createRoom(options: { name: string; role: Role; chatEnable
         { applyLocally: false },
       );
       if (!claimed.committed) continue;
-      const engine = RoomEngine.create({ code, hostId: uid, name: cleanName(options.name), role: options.role, chatEnabled: options.chatEnabled, tutorialEnabled: options.tutorialEnabled, now });
+      const engine = RoomEngine.create({ code, hostId: uid, name: cleanName(options.name), role: options.role, chatEnabled: options.chatEnabled, tutorialEnabled: options.tutorialEnabled, startLevel: options.startLevel, now });
       const snapshot = engine.snapshotFor(uid) as EngineSnapshot;
       const connection = activate(RoomConnection.open(code, uid, new HostRuntime(code, uid, engine)));
       return { connection, snapshot };
