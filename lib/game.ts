@@ -392,7 +392,7 @@ export function createGameState(level = 1, phase: RoundPhase = "waiting", lastRe
   const startSeq = Math.max(0, ...keptMessages.map((message) => message.seq ?? 0)) + 1;
   const practice = definition.level === 0;
   return {
-    serial: practice ? "PRACTICE" : `BN-${Math.floor(10000 + Math.random() * 90000)}`,
+    serial: practice ? "PRACTICE" : `SN-${Math.floor(10000 + Math.random() * 90000)}`,
     level: definition.level,
     phase,
     lastResult,
@@ -445,7 +445,7 @@ export function publicStateForRole(state: GameState, role: Role, playerId = "") 
         }))
     : [];
   const common = {
-    serial: role === "observer" ? state.serial : role === "operator" ? "BN-•••••" : null,
+    serial: role === "observer" ? state.serial : role === "operator" ? "SN-•••••" : null,
     level: state.level,
     levelTitle: definition.title,
     activeModules: enabledModules,

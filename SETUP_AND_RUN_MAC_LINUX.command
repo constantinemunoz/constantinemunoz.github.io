@@ -11,7 +11,7 @@ fi
 
 NODE_MAJOR="$(node -p 'process.versions.node.split(".")[0]')"
 if [ "$NODE_MAJOR" -lt 22 ]; then
-  echo "BOMBANANA needs Node.js 22.13 or newer. Your version is $(node --version)."
+  echo "Snip No Evil needs Node.js 22.13 or newer. Your version is $(node --version)."
   read -r -p "Press Enter to close..."
   exit 1
 fi
@@ -22,10 +22,10 @@ if ! command -v pnpm >/dev/null 2>&1; then
   corepack prepare pnpm@11.25.0 --activate
 fi
 
-echo "Installing BOMBANANA packages..."
+echo "Installing Snip No Evil packages..."
 pnpm install --frozen-lockfile
 
-echo "Starting BOMBANANA at http://localhost:3000"
+echo "Starting Snip No Evil at http://localhost:3000"
 echo "Multiplayer rooms use the same Firebase database as the live site."
 echo "Keep this window open while you play. Press Control+C to stop."
 pnpm run dev

@@ -1,6 +1,6 @@
-# constantinemunoz.github.io — BOMBANANA
+# constantinemunoz.github.io — Snip No Evil
 
-BOMBANANA is an unofficial three-player browser bomb-defusal drill. One player is the
+Snip No Evil (formerly BOMBANANA) is an unofficial three-player browser bomb-defusal game. One player is the
 **Blind Operator** (touches every control, sees no colours), one is the **Deaf Observer**
 (sees the live bomb and the Blind cursor, gets no manual) and one is the **Mute Specialist**
 (reads the full manual, can only send numbers and hand signs). Clear ten campaign levels,
@@ -10,6 +10,10 @@ Levels 1 to 7 use the four easy modules (cables, color sliders, direction, calcu
 Level 8 adds the symbol dial, where only the Deaf player can see the module beep, Level 9
 adds the piano, and Level 10 pairs the dial with the piano. The room creator can turn on
 an untimed Level 0 practice round, or type a level to start the campaign there.
+
+Nobody picks a role on the home screen. Type a name (and the room code to join) and
+press Play: the room hands out the first open seat, and players tap a seat in the lobby
+or ready room to move or swap.
 
 Live site: <https://constantinemunoz.github.io/>
 
@@ -103,4 +107,4 @@ which needs Java) and run the app with `NEXT_PUBLIC_FIREBASE_EMULATOR=1`.
 - `scripts/test-game-logic.mjs`, `scripts/test-room-engine.mjs` — tests
 - `docs/CODE_REVIEW.md` — the code review done when the site was set up, with status
 
-BOMBANANA is an unofficial browser tribute and is not affiliated with Lefto Studio or TARK.
+Snip No Evil is an unofficial browser tribute and is not affiliated with Lefto Studio or TARK.

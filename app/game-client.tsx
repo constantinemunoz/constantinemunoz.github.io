@@ -49,13 +49,11 @@ import {
   Wrench,
   X,
 } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Progress } from "@/components/ui/progress";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
@@ -187,6 +185,7 @@ const BRAILLE: Record<number, number[]> = {
   9: [2, 4],
 };
 
+// Storage key kept from the game's old name so saved sessions survive the rename.
 const SESSION_KEY = "bombanana-session";
 
 // Sends a request to the room host (see lib/room-client.ts) and resolves with
@@ -217,23 +216,6 @@ function formatTime(ms: number) {
   return `${Math.floor(safe / 60)}:${String(safe % 60).padStart(2, "0")}`;
 }
 
-function RoleChoice({ value, onChange }: { value: Role; onChange: (role: Role) => void }) {
-  return (
-    <RadioGroup value={value} onValueChange={(next) => onChange(next as Role)} className="role-picker" aria-label="Choose a role">
-      {ROLES.map((role) => {
-        const meta = ROLE_META[role];
-        return (
-          <label className="role-option" key={role} data-selected={value === role}>
-            <RadioGroupItem value={role} className="sr-only" />
-            <span className="role-monkey" aria-hidden="true">{meta.monkey}</span>
-            <span><b>{meta.name}</b><small>{meta.short}</small></span>
-          </label>
-        );
-      })}
-    </RadioGroup>
-  );
-}
-
 const TUTORIAL_PAGES = ["THE BOMB", "THE SQUAD", "THE RELAY", "EASY MODULES", "HARD MODULES", "THE ROUND"];
 
 function TutorialSpread({ page }: { page: number }) {
@@ -252,14 +234,38 @@ function TutorialSpread({ page }: { page: number }) {
 
 function TutorialButton({ className = "", label = "How to play" }: { className?: string; label?: string }) {
   const [page, setPage] = useState(0);
-  return <Dialog onOpenChange={(open) => { if (!open) setPage(0); }}><DialogTrigger asChild><Button type="button" variant="outline" className={className}><CircleHelp />{label}</Button></DialogTrigger><DialogContent className="tutorial-dialog" showCloseButton={false}><div className="tutorial-topline"><div><DialogTitle>BOMBANANA FIELD GUIDE</DialogTitle><DialogDescription>{TUTORIAL_PAGES[page]} · PAGE {page + 1} OF {TUTORIAL_PAGES.length}</DialogDescription></div><DialogClose asChild><button type="button" aria-label="Close tutorial"><X /></button></DialogClose></div><TutorialSpread page={page} /><footer className="tutorial-footer"><button type="button" onClick={() => setPage((current) => Math.max(0, current - 1))} disabled={page === 0}><ChevronLeft /> BACK</button><div aria-label={`Tutorial page ${page + 1} of ${TUTORIAL_PAGES.length}`}>{TUTORIAL_PAGES.map((title, index) => <button type="button" key={title} onClick={() => setPage(index)} data-active={index === page} aria-label={`Open ${title.toLowerCase()} page`} />)}</div>{page < TUTORIAL_PAGES.length - 1 ? <button type="button" onClick={() => setPage((current) => Math.min(TUTORIAL_PAGES.length - 1, current + 1))}>NEXT <ChevronRight /></button> : <DialogClose asChild><button type="button">DONE <Check /></button></DialogClose>}</footer></DialogContent></Dialog>;
+  return <Dialog onOpenChange={(open) => { if (!open) setPage(0); }}><DialogTrigger asChild><Button type="button" variant="outline" className={className}><CircleHelp />{label}</Button></DialogTrigger><DialogContent className="tutorial-dialog" showCloseButton={false}><div className="tutorial-topline"><div><DialogTitle>SNIP NO EVIL FIELD GUIDE</DialogTitle><DialogDescription>{TUTORIAL_PAGES[page]} · PAGE {page + 1} OF {TUTORIAL_PAGES.length}</DialogDescription></div><DialogClose asChild><button type="button" aria-label="Close tutorial"><X /></button></DialogClose></div><TutorialSpread page={page} /><footer className="tutorial-footer"><button type="button" onClick={() => setPage((current) => Math.max(0, current - 1))} disabled={page === 0}><ChevronLeft /> BACK</button><div aria-label={`Tutorial page ${page + 1} of ${TUTORIAL_PAGES.length}`}>{TUTORIAL_PAGES.map((title, index) => <button type="button" key={title} onClick={() => setPage(index)} data-active={index === page} aria-label={`Open ${title.toLowerCase()} page`} />)}</div>{page < TUTORIAL_PAGES.length - 1 ? <button type="button" onClick={() => setPage((current) => Math.min(TUTORIAL_PAGES.length - 1, current + 1))}>NEXT <ChevronRight /></button> : <DialogClose asChild><button type="button">DONE <Check /></button></DialogClose>}</footer></DialogContent></Dialog>;
+}
+
+// Closed scissors pointing right: two ring handles and a long blade. The two
+// halves snip open and shut when the page loads and when the title is hovered.
+function SnipMark({ className = "" }: { className?: string }) {
+  return (
+    <svg className={`snip-mark ${className}`} viewBox="0 0 124 72" aria-hidden="true">
+      <g className="snip-half snip-half-top">
+        <path d="M34 22 L118 35 L46 40 Z" fill="#e8eef4" stroke="currentColor" strokeWidth="4" strokeLinejoin="round" />
+        <ellipse cx="20" cy="17" rx="15" ry="11" fill="none" stroke="currentColor" strokeWidth="10" />
+        <ellipse className="snip-grip" cx="20" cy="17" rx="15" ry="11" fill="none" strokeWidth="5" />
+      </g>
+      <g className="snip-half snip-half-bottom">
+        <path d="M34 50 L118 35 L46 32 Z" fill="#cfd9e3" stroke="currentColor" strokeWidth="4" strokeLinejoin="round" />
+        <ellipse cx="20" cy="55" rx="15" ry="11" fill="none" stroke="currentColor" strokeWidth="10" />
+        <ellipse className="snip-grip" cx="20" cy="55" rx="15" ry="11" fill="none" strokeWidth="5" />
+      </g>
+      <circle cx="46" cy="36" r="4" fill="currentColor" />
+    </svg>
+  );
+}
+
+// Hand-drawn red strike-through, two crossing lines like a scribbled-out word.
+function Scribble() {
+  return <svg className="scribble" viewBox="0 0 100 40" preserveAspectRatio="none" aria-hidden="true"><path d="M-3 31 Q 45 21 104 9" /><path d="M-2 8 Q 46 15 103 30" /></svg>;
 }
 
 function StartScreen({ onEnter, onTest, notice }: { onEnter: (connection: RoomConnection, data: RoomSnapshot) => void; onTest: () => void; notice?: string }) {
   const [mode, setMode] = useState("join");
   const [name, setName] = useState("");
   const [code, setCode] = useState("");
-  const [role, setRole] = useState<Role>("operator");
   const [chatEnabled, setChatEnabled] = useState(false);
   const [tutorialEnabled, setTutorialEnabled] = useState(false);
   const [startLevelText, setStartLevelText] = useState("");
@@ -267,16 +273,19 @@ function StartScreen({ onEnter, onTest, notice }: { onEnter: (connection: RoomCo
   const [error, setError] = useState("");
   const startLevel = startLevelText.trim() === "" ? 1 : Number(startLevelText);
 
-  async function submit() {
+  async function submit(event?: ReactFormEvent) {
+    event?.preventDefault();
     setError("");
-    if (!name.trim()) return setError("Give your monkey a name.");
+    if (!name.trim()) return setError("Type your name first.");
     if (mode === "join" && code.replace(/\W/g, "").length !== 5) return setError("Enter the five-character room code.");
     if (mode === "create" && (!Number.isInteger(startLevel) || startLevel < 1 || startLevel > 11)) return setError("Start level must be a whole number from 1 to 11.");
     setBusy(true);
     try {
+      // No role is picked here: the room hands out the first open seat and
+      // players can switch seats in the lobby.
       const entered = mode === "join"
-        ? await joinRoom({ code, name, role })
-        : await createRoom({ name, role, chatEnabled, tutorialEnabled, startLevel });
+        ? await joinRoom({ code, name })
+        : await createRoom({ name, chatEnabled, tutorialEnabled, startLevel });
       const data = entered.snapshot as unknown as RoomSnapshot;
       try { sessionStorage.setItem(SESSION_KEY, JSON.stringify({ code: data.room.code })); } catch { /* Private windows may block storage; the game still works. */ }
       onEnter(entered.connection, data);
@@ -287,53 +296,49 @@ function StartScreen({ onEnter, onTest, notice }: { onEnter: (connection: RoomCo
     }
   }
 
+  const nameRow = <><label className="home-label" htmlFor="player-name">Name:</label><Input id="player-name" value={name} onChange={(event) => setName(event.target.value.slice(0, 20))} placeholder="Your name" className="game-input home-input" autoComplete="nickname" /></>;
+  const feedback = notice ? <p className="room-notice" role="status">{notice}</p> : null;
+  const play = <>{error && <p className="form-error" role="alert">{error}</p>}<Button type="submit" disabled={busy} className="home-play">{busy ? (mode === "create" ? "Opening…" : "Joining…") : "Play"}</Button></>;
+
   return (
-    <main className="start-shell">
-      <header className="brand-lockup" aria-label="Bombanana browser drill">
-        <div className="brand-bomb"><Bomb aria-hidden="true" /></div>
-        <div><span className="eyebrow">THREE MONKEY BOMB SQUAD</span><h1>BOMBA<span>NANA</span></h1></div>
-        <Banana className="brand-banana" aria-hidden="true" />
+    <main className="home-shell">
+      <header className="home-title">
+        <p className="home-senses" aria-label="See no evil, hear no evil, speak no evil."><span aria-hidden="true">SEE<Scribble /></span><span aria-hidden="true">HEAR<Scribble /></span><span aria-hidden="true">SPEAK<Scribble /></span></p>
+        <h1 aria-label="Snip No Evil"><span aria-hidden="true">SNIP</span> <span aria-hidden="true">NO</span> <span aria-hidden="true">EVIL</span><SnipMark className="home-scissors" /></h1>
       </header>
-      <section className="start-grid">
-        <div className="brief-panel">
-          <Badge className="brief-badge">3 PLAYERS · 10 LEVELS · 6 MODULES · ∞</Badge>
-          <h2>Every monkey holds one piece of the answer.</h2>
-          <p>Clear ten suitcase levels together, then keep going in infinite mode. Every round starts only after all three roles ready up.</p>
-          <div className="mini-roles">
-            {ROLES.map((item, index) => (
-              <div key={item}><span className="role-index">0{index + 1}</span><span className="mini-monkey">{ROLE_META[item].monkey}</span><div><b>{ROLE_META[item].short}</b><small>{ROLE_META[item].ability}</small></div></div>
-            ))}
-          </div>
-        </div>
-        <div className="entry-card">
-          {notice && <p className="room-notice" role="status">{notice}</p>}
-          <Tabs value={mode} onValueChange={setMode}>
-            <TabsList className="entry-tabs"><TabsTrigger value="create">Create room</TabsTrigger><TabsTrigger value="join">Join room</TabsTrigger></TabsList>
-            <TabsContent value="create" className="entry-content"><p>You’ll receive a room code for the other two players.</p></TabsContent>
-            <TabsContent value="join" className="entry-content">
-              <label className="field-label" htmlFor="room-code">Room code</label>
-              <Input id="room-code" value={code} onChange={(event) => setCode(event.target.value.toUpperCase().slice(0, 5))} placeholder="BAN42" className="game-input code-input" autoComplete="off" />
-            </TabsContent>
-          </Tabs>
-          <label className="field-label" htmlFor="player-name">Monkey name</label>
-          <Input id="player-name" value={name} onChange={(event) => setName(event.target.value.slice(0, 20))} placeholder="Constantine" className="game-input" autoComplete="nickname" />
-          <span className="field-label">Choose your assignment</span>
-          <RoleChoice value={role} onChange={setRole} />
-          {mode === "create" && <div className="room-option-stack"><label className="chat-mode-toggle"><span><b>OPTIONAL TEXT CHAT</b><small>{chatEnabled ? "BLIND and DEAF can type during the game." : "Role signals stay limited to the existing tools."}</small></span><Switch checked={chatEnabled} onCheckedChange={setChatEnabled} aria-label="Enable text chat" /></label><label className="chat-mode-toggle tutorial-mode-toggle"><span><b>LEVEL 0 · PRACTICE ROUND</b><small>{tutorialEnabled ? `One untimed cable round to learn the relay, then Level ${startLevel || 1}.` : `Skip practice and start at Level ${startLevel || 1}.`}</small></span><Switch checked={tutorialEnabled} onCheckedChange={setTutorialEnabled} aria-label="Level 0 practice round before Level 1" /></label><label className="chat-mode-toggle start-level-field" htmlFor="start-level"><span><b>START AT LEVEL</b><small>Optional. 1 to 10, or 11 for infinite mode. Blank means Level 1.</small></span><Input id="start-level" type="number" inputMode="numeric" min={1} max={11} step={1} value={startLevelText} onChange={(event) => setStartLevelText(event.target.value.slice(0, 2))} placeholder="1" className="game-input start-level-input" aria-label="Start at level" /></label></div>}
-          {error && <p className="form-error" role="alert">{error}</p>}
-          <Button onClick={submit} disabled={busy} className="launch-button">{busy ? "Opening case…" : mode === "create" ? "Create squad" : "Claim seat"}<span aria-hidden="true">→</span></Button>
-          <div className="entry-links"><TutorialButton className="rules-link" label="Rules" /><button type="button" className="text-link" onClick={onTest}><Wrench /> Try it alone</button></div>
-        </div>
-      </section>
-      <footer className="start-footer"><span>Unofficial browser tribute. Not affiliated with Lefto Studio or TARK.</span><span>Built for three separate tabs or devices.</span></footer>
+      <Tabs value={mode} onValueChange={(next) => { setMode(next); setError(""); }} className="home-card">
+        <TabsList className="home-tabs"><TabsTrigger value="join">Join game</TabsTrigger><TabsTrigger value="create">Create game</TabsTrigger></TabsList>
+        <TabsContent value="join" className="home-panel">
+          <form onSubmit={submit} noValidate>
+            {feedback}
+            <div className="home-fields">{nameRow}<label className="home-label" htmlFor="room-code">Room:</label><Input id="room-code" value={code} onChange={(event) => setCode(event.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 5))} placeholder="ABC12" className="game-input home-input code-input" autoComplete="off" autoCapitalize="characters" spellCheck={false} /></div>
+            {play}
+          </form>
+        </TabsContent>
+        <TabsContent value="create" className="home-panel">
+          <form onSubmit={submit} noValidate>
+            {feedback}
+            <div className="home-fields">{nameRow}</div>
+            <div className="room-option-stack"><label className="chat-mode-toggle"><span><b>OPTIONAL TEXT CHAT</b><small>{chatEnabled ? "BLIND and DEAF can type during the game." : "Role signals stay limited to the existing tools."}</small></span><Switch checked={chatEnabled} onCheckedChange={setChatEnabled} aria-label="Enable text chat" /></label><label className="chat-mode-toggle tutorial-mode-toggle"><span><b>LEVEL 0 · PRACTICE ROUND</b><small>{tutorialEnabled ? `One untimed cable round to learn the relay, then Level ${startLevel || 1}.` : `Skip practice and start at Level ${startLevel || 1}.`}</small></span><Switch checked={tutorialEnabled} onCheckedChange={setTutorialEnabled} aria-label="Level 0 practice round before Level 1" /></label><label className="chat-mode-toggle start-level-field" htmlFor="start-level"><span><b>START AT LEVEL</b><small>Optional. 1 to 10, or 11 for infinite mode. Blank means Level 1.</small></span><Input id="start-level" type="number" inputMode="numeric" min={1} max={11} step={1} value={startLevelText} onChange={(event) => setStartLevelText(event.target.value.slice(0, 2))} placeholder="1" className="game-input start-level-input" aria-label="Start at level" /></label></div>
+            {play}
+            <p className="home-hint">You&apos;ll get a room code to send to your two friends.</p>
+          </form>
+        </TabsContent>
+      </Tabs>
+      <div className="entry-links home-links"><TutorialButton className="rules-link" label="Rules" /><button type="button" className="text-link" onClick={onTest}><Wrench /> Try it alone</button></div>
+      <footer className="home-footer"><span>Three players, three devices, one voice call.</span><span>Unofficial browser tribute. Not affiliated with Lefto Studio or TARK.</span></footer>
     </main>
   );
 }
 
-function RoleChip({ player, role, you }: { player?: Player; role: Role; you: boolean }) {
+function LobbySeat({ player, role, you, busy, onPick }: { player?: Player; role: Role; you: boolean; busy: boolean; onPick: () => void }) {
   const meta = ROLE_META[role];
-  if (!player) return <div className="seat-card empty-seat"><span className="seat-monkey" aria-hidden="true">{meta.monkey}</span><div><small>{meta.short}</small><b>OPEN SEAT</b><i>Waiting for a friend</i></div><span className="seat-plus" aria-hidden="true">+</span></div>;
-  return <div className="seat-card" data-you={you}><span className="seat-monkey" aria-hidden="true">{meta.monkey}</span><div><small>{meta.short} · {meta.name}</small><b>{player.name}</b>{you && <i>That&apos;s you</i>}</div><span className={player.online ? "presence online" : "presence"} aria-label={player.online ? "online" : "away"} /></div>;
+  const label = you ? `You are the ${meta.name}` : player ? `Swap seats with ${player.name}` : `Move to the ${meta.name} seat`;
+  return <button type="button" className={player ? "seat-card" : "seat-card empty-seat"} data-you={you} disabled={busy || you} onClick={onPick} aria-label={label}>
+    <span className="seat-monkey" aria-hidden="true">{meta.monkey}</span>
+    <div><small>{meta.short} · {meta.name}</small><b>{player && <span className={player.online ? "presence online" : "presence"} aria-label={player.online ? "online" : "away"} />}{player?.name ?? "OPEN SEAT"}</b><i>{you ? "That's you" : player ? "Tap to swap seats" : "Tap to sit here"}</i></div>
+    <div className="seat-state">{you ? <em className="seat-you">YOU</em> : player ? <em className="seat-swap"><ArrowLeftRight aria-hidden="true" /> SWAP</em> : <em className="seat-swap seat-sit">SIT</em>}</div>
+  </button>;
 }
 
 const DEMO_STEPS: Array<{ who: Role; title: string; says: string; sign?: string }> = [
@@ -374,6 +379,13 @@ function Lobby({ data, onData, onTest, onLeave, banner }: { data: RoomSnapshot; 
   const full = data.room.players.length === 3;
   const missing = 3 - data.room.players.length;
 
+  async function pickSeat(targetRole: Role) {
+    setBusy(true); setError("");
+    try { onData(await requestRoom({ action: "switch-role", targetRole })); }
+    catch (cause) { setError(cause instanceof Error ? cause.message : "Could not switch seats."); }
+    finally { setBusy(false); }
+  }
+
   async function copyCode() {
     try {
       await navigator.clipboard.writeText(data.room.code);
@@ -390,8 +402,9 @@ function Lobby({ data, onData, onTest, onLeave, banner }: { data: RoomSnapshot; 
   return (
     <main className="lobby-shell"><div className="lobby-card">
       <div className="lobby-topline"><Radio /> ROOM OPEN <span>{full ? "SQUAD COMPLETE" : `WAITING FOR ${missing} MORE`}</span></div>
-      <div className="room-code-block"><small>ROOM CODE · SEND IT TO YOUR TWO FRIENDS</small><button onClick={copyCode} aria-label="Copy room code">{data.room.code} {copied ? <Check /> : <Copy />}</button><em>{copied ? "Copied!" : "They open the site, pick Join room, and type it in."}</em></div>
-      <div className="seat-grid">{slots.map((player, index) => <RoleChip player={player} role={ROLES[index]} you={player?.role === data.player.role} key={ROLES[index]} />)}</div>
+      <div className="room-code-block"><small>ROOM CODE · SEND IT TO YOUR TWO FRIENDS</small><button onClick={copyCode} aria-label="Copy room code">{data.room.code} {copied ? <Check /> : <Copy />}</button><em>{copied ? "Copied!" : "They open the site, type their name and this code, and press Play."}</em></div>
+      <p className="seat-note"><ArrowLeftRight aria-hidden="true" /> Seats are handed out as people join. Tap another seat to move there or swap.</p>
+      <div className="seat-grid">{slots.map((player, index) => <LobbySeat player={player} role={ROLES[index]} you={player?.role === data.player.role} busy={busy} onPick={() => pickSeat(ROLES[index])} key={ROLES[index]} />)}</div>
       <RelayDemo />
       <SetupChecklist />
       <div className="lobby-option-grid"><div className="lobby-chat-status" data-enabled={data.room.game.chatEnabled}><MessageCircle /><b>TEXT CHAT {data.room.game.chatEnabled ? "ON" : "OFF"}</b><span>{data.room.game.chatEnabled ? "BLIND + DEAF can type" : "Voice only"}</span></div><div className="lobby-chat-status tutorial-lobby-status" data-enabled={data.room.game.tutorialEnabled}><CircleHelp /><b>LEVEL 0 {data.room.game.tutorialEnabled ? "ON" : "OFF"}</b><span>{data.room.game.tutorialEnabled ? "Practice round first" : `Straight to Level ${data.room.startLevel}`}</span></div>{data.room.startLevel > 1 && <div className="lobby-chat-status start-level-status" data-enabled="true"><Play /><b>START AT {data.room.startLevel === 11 ? "∞" : `LEVEL ${data.room.startLevel}`}</b><span>{levelDefinition(data.room.startLevel).title}</span></div>}</div>
@@ -1133,7 +1146,7 @@ function Game({ data, onData, developer, onLeave, banner }: { data: RoomSnapshot
   const caseFeed = <CaseFeed role={role} actionLog={game.actionLog} chatEnabled={game.chatEnabled} messages={game.messages} onSend={sendMessage} onSign={sendChat} busy={busy} />;
 
   return <main className="game-shell" data-role={role} data-developer={Boolean(developer)}>
-    <header className="game-header"><div className="game-header-start"><Link className="game-brand" href="/"><Bomb /><b>BOMBA<span>NANA</span></b></Link>{onLeave && !developer && <button type="button" className="leave-room-button" onClick={onLeave} aria-label="Leave room"><LogOut /><span>LEAVE</span></button>}</div><div className="room-pill"><Users /> {developer ? "TEST MODE" : "ROOM"} <b>{data.room.code}</b></div><div className="level-pill">LEVEL <b>{game.level === 11 ? "∞" : game.level}</b>{game.level === 0 && <i>PRACTICE</i>}</div><div className="timer-block" data-urgent={game.level > 0 && remaining < 30_000 && game.phase === "playing"}><Clock3 /><div><strong>{game.phase === "waiting" ? "READY" : prestart > 0 ? `0:0${prestart}` : game.level === 0 ? "NO TIMER" : formatTime(remaining)}</strong><Progress value={game.phase === "waiting" || game.level === 0 ? 100 : timePercent} /></div></div><div className="strike-block"><ShieldAlert />{game.level === 0 ? <em className="no-strikes">NO STRIKES</em> : Array.from({ length: game.maxMistakes }, (_, index) => <i key={index} data-hit={index < game.mistakes} />)}</div></header>
+    <header className="game-header"><div className="game-header-start"><Link className="game-brand" href="/"><SnipMark /><b>SNIP <span>NO EVIL</span></b></Link>{onLeave && !developer && <button type="button" className="leave-room-button" onClick={onLeave} aria-label="Leave room"><LogOut /><span>LEAVE</span></button>}</div><div className="room-pill"><Users /> {developer ? "TEST MODE" : "ROOM"} <b>{data.room.code}</b></div><div className="level-pill">LEVEL <b>{game.level === 11 ? "∞" : game.level}</b>{game.level === 0 && <i>PRACTICE</i>}</div><div className="timer-block" data-urgent={game.level > 0 && remaining < 30_000 && game.phase === "playing"}><Clock3 /><div><strong>{game.phase === "waiting" ? "READY" : prestart > 0 ? `0:0${prestart}` : game.level === 0 ? "NO TIMER" : formatTime(remaining)}</strong><Progress value={game.phase === "waiting" || game.level === 0 ? 100 : timePercent} /></div></div><div className="strike-block"><ShieldAlert />{game.level === 0 ? <em className="no-strikes">NO STRIKES</em> : Array.from({ length: game.maxMistakes }, (_, index) => <i key={index} data-hit={index < game.mistakes} />)}</div></header>
     <section className="role-banner"><div className="role-identity"><span>{meta.monkey}</span><div><small>YOUR ASSIGNMENT</small><h1>{meta.name}</h1></div></div><p><RoleIcon />{meta.ability}</p><RoleSenses role={role} compact /></section>
     {developer && <section className="developer-toolbar"><div className="developer-heading"><Wrench /><div><b>DEVELOPER MODE</b><span>Timer paused · shared test bomb</span></div></div><div className="developer-role-switcher">{ROLES.map((item) => <Button key={item} variant="outline" data-active={developer.role === item} onClick={() => developer.onRoleChange(item)}><span>{ROLE_META[item].monkey}</span>{ROLE_META[item].short}</Button>)}</div><div className="developer-level-switcher">{LEVELS.map(({ level }) => <button key={level} data-active={developer.level === level} onClick={() => developer.onLevelChange(level)}>{level === 11 ? "∞" : level}</button>)}</div><details className="developer-solution"><summary>Reveal solution</summary><div>{developer.solution.map((line) => <span key={line}>{line}</span>)}</div></details><div className="developer-actions"><Button variant="outline" onClick={developer.onWaitingPreview}>Ready room</Button><Button variant="outline" onClick={developer.onReset}><RefreshCw /> Reset</Button><Button variant="outline" onClick={developer.onExit}><X /></Button></div></section>}
     <div className="progress-rail"><span>{game.completed}/{game.moduleCount} MODULES</span><Progress value={(game.completed / Math.max(1, game.moduleCount)) * 100} /><span>{game.levelTitle}</span></div>

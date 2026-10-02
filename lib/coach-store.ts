@@ -2,6 +2,7 @@
 // "role:module". A tip shows until the team clears that module once while
 // this player holds that role, so returning players are not nagged and a
 // role swap brings back the tips for the new job.
+// Key kept from the game's old name so learned tips survive the rename.
 const STORAGE_KEY = "bombanana-learned-tips";
 const EMPTY: ReadonlySet<string> = new Set();
 
