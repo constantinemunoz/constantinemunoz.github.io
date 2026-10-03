@@ -336,7 +336,7 @@ function LobbySeat({ player, role, you, busy, onPick }: { player?: Player; role:
   const label = you ? `You are the ${meta.name}` : player ? `Swap seats with ${player.name}` : `Move to the ${meta.name} seat`;
   return <button type="button" className={player ? "seat-card" : "seat-card empty-seat"} data-you={you} disabled={busy || you} onClick={onPick} aria-label={label}>
     <span className="seat-monkey" aria-hidden="true">{meta.monkey}</span>
-    <div><small>{meta.short} · {meta.name}</small><b>{player && <span className={player.online ? "presence online" : "presence"} aria-label={player.online ? "online" : "away"} />}{player?.name ?? "OPEN SEAT"}</b><i>{you ? "That's you" : player ? "Tap to swap seats" : "Tap to sit here"}</i></div>
+    <div><small>{meta.short}<span className="seat-role-name"> · {meta.name}</span></small><b>{player && <span className={player.online ? "presence online" : "presence"} aria-label={player.online ? "online" : "away"} />}{player?.name ?? "OPEN SEAT"}</b><i>{you ? "That's you" : player ? "Tap to swap seats" : "Tap to sit here"}</i></div>
     <div className="seat-state">{you ? <em className="seat-you">YOU</em> : player ? <em className="seat-swap"><ArrowLeftRight aria-hidden="true" /> SWAP</em> : <em className="seat-swap seat-sit">SIT</em>}</div>
   </button>;
 }
@@ -610,9 +610,10 @@ function SuitcaseBomb({ game, vision, act, busy = false, cursor, onCursorMove }:
       if (size === lastSize) return;
       suitcase.style.zoom = "";
       if (spills()) {
-        let fits = 0.4;
+        // The smallest phones need a little under 0.4 to show every key.
+        let fits = 0.3;
         let tooBig = 1;
-        for (let step = 0; step < 7; step += 1) {
+        for (let step = 0; step < 8; step += 1) {
           const middle = (fits + tooBig) / 2;
           suitcase.style.zoom = String(middle);
           if (spills()) tooBig = middle;
@@ -858,7 +859,7 @@ function RoundWaitingRoom({ data, onReady, onSwitchRole, busy, developer }: { da
     <div className="next-level-card"><div><small>{briefing ? "FIRST UP" : "NEXT UP"} · LEVEL {levelLabel} · {timeLabel}</small><h3>{next.title}</h3></div><div className="next-modules">{next.modules.map((module) => { const MetaIcon = MODULE_META[module].icon; return <span key={module}><MetaIcon />{MODULE_META[module].label}</span>; })}{Boolean(next.randomCount) && <span className="random-module-chip"><Shuffle />{next.randomCount} RANDOM</span>}</div></div>
     <div className="role-switch-panel">
       <div className="role-switch-note"><b>YOUR SQUAD</b><span><ArrowLeftRight aria-hidden="true" /> Tap another seat to swap roles with that player. A swap clears everyone&apos;s READY.</span></div>
-      <div className="ready-seat-grid">{ROLES.map((seatRole) => { const player = data.room.players.find((candidate) => candidate.role === seatRole); const current = seatRole === role; return <button type="button" key={seatRole} data-ready={player?.ready} data-current={current} disabled={busy || current} onClick={() => onSwitchRole(seatRole)} aria-label={current ? `You are ${ROLE_META[seatRole].name}` : `Swap roles with ${player?.name ?? ROLE_META[seatRole].name}`}><span className="seat-monkey">{ROLE_META[seatRole].monkey}</span><div><small>{ROLE_META[seatRole].short} · {ROLE_META[seatRole].name}</small><b>{player?.name ?? "OPEN SEAT"}</b></div><div className="seat-state">{current ? <em className="seat-you">YOU</em> : <em className="seat-swap"><ArrowLeftRight aria-hidden="true" /> SWAP</em>}<i data-ready={player?.ready}>{player?.ready ? "READY ✓" : "NOT READY"}</i></div></button>; })}</div>
+      <div className="ready-seat-grid">{ROLES.map((seatRole) => { const player = data.room.players.find((candidate) => candidate.role === seatRole); const current = seatRole === role; return <button type="button" key={seatRole} data-ready={player?.ready} data-current={current} disabled={busy || current} onClick={() => onSwitchRole(seatRole)} aria-label={current ? `You are ${ROLE_META[seatRole].name}` : `Swap roles with ${player?.name ?? ROLE_META[seatRole].name}`}><span className="seat-monkey">{ROLE_META[seatRole].monkey}</span><div><small>{ROLE_META[seatRole].short}<span className="seat-role-name"> · {ROLE_META[seatRole].name}</span></small><b>{player?.name ?? "OPEN SEAT"}</b></div><div className="seat-state">{current ? <em className="seat-you">YOU</em> : <em className="seat-swap"><ArrowLeftRight aria-hidden="true" /> SWAP</em>}<i data-ready={player?.ready}>{player?.ready ? "READY ✓" : "NOT READY"}</i></div></button>; })}</div>
     </div>
     <div className="waiting-actions"><Button className="ready-button" disabled={busy || (!developer && self?.ready)} onClick={onReady}>{readyLabel}<Play /></Button></div>
     <p>{next.level === 0 ? "Level 0 starts when all three are ready. No clock, no strikes, just learn the relay." : "The timer starts only when all three monkeys are ready."}<TutorialButton className="rules-link" label="Rules" /></p>

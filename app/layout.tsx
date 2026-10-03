@@ -1,10 +1,19 @@
 import type { Metadata } from "next";
-import { Lilita_One } from "next/font/google";
+import localFont from "next/font/local";
 import "./globals.css";
 
-// Chunky rounded display face for the SNIP NO EVIL title. next/font downloads it
-// at build time and serves it from this site, so players never hit Google.
-const display = Lilita_One({ weight: "400", subsets: ["latin"], display: "swap", variable: "--font-display" });
+// GoofusHand is the only font in the game. app/fonts/goofus-hand.woff2 is built
+// from fonts-src/GoofusHand.ttf by scripts/build-font.py. It is tiny and
+// preloaded, so "block" avoids a flash of a different font on first paint.
+const goofusHand = localFont({
+  src: "./fonts/goofus-hand.woff2",
+  variable: "--font-goofus",
+  display: "block",
+  weight: "400",
+  style: "normal",
+  preload: true,
+  adjustFontFallback: false,
+});
 
 export const metadata: Metadata = {
   title: "Snip No Evil — Three-Player Bomb Defusal",
@@ -22,7 +31,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`dark ${display.variable}`}>
+    <html lang="en" className={`dark ${goofusHand.variable}`}>
       <body className="antialiased">{children}</body>
     </html>
   );
