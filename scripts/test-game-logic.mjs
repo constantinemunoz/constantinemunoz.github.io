@@ -1,6 +1,11 @@
 import {
   activeModules,
   ALL_MODULES,
+  INFINITE_LEVEL,
+  LAST_CAMPAIGN_LEVEL,
+  MEDIUM_MODULES,
+  SOUNDBOARD_RULES,
+  soundGroup,
   applyModuleAction,
   CALCULATOR_RULES,
   CABLE_RULES,
@@ -96,9 +101,9 @@ function solveSymbol(state) {
   const expectedColor = SYMBOL_RULES[symbol.seed][symbol.target];
   assert(expectedColor === symbol.targetColor, "Symbol target color disagrees with the manual");
   assert(symbol.buttons.length === 3 && new Set(symbol.buttons).size === 3 && symbol.buttons.includes(expectedColor), "Symbol buttons must be three different colors including the answer");
-  // Turn the dial until DEAF's beep shows, then press the matching button.
+  // Turn the dial until BLIND's beep shows, then press the matching button.
   let turns = 0;
-  while (!publicStateForRole(state, "observer", "deaf-id").modules.symbol.beep) {
+  while (!publicStateForRole(state, "operator", "blind-id").modules.symbol.beep) {
     applyModuleAction(state, "symbol-rotate");
     turns += 1;
     assert(turns <= SYMBOLS.length, "The symbol dial never beeped");
@@ -108,7 +113,24 @@ function solveSymbol(state) {
   assert(symbol.solved, "Correct symbol button was rejected");
 }
 
-const solvers = { cable: solveCable, slider: solveSlider, direction: solveDirection, calculator: solveCalculator, piano: solvePiano, symbol: solveSymbol };
+function solveSoundboard(state) {
+  const board = state.modules.soundboard;
+  assert(new Set(board.numbers).size === 9 && board.colors.length === 9, "The soundboard needs nine numbered buttons");
+  // Search: press buttons in order until BLIND's view reports the beep.
+  for (let index = 0; index < 9; index += 1) {
+    applyModuleAction(state, "soundboard-press", index);
+    if (publicStateForRole(state, "operator", "blind-id").modules.soundboard.beep !== null) break;
+  }
+  const beep = publicStateForRole(state, "operator", "blind-id").modules.soundboard.beep;
+  assert(beep === board.beeper && state.mistakes === 0, "Searching for the beep must never strike");
+  // Answer: the beeping button's color and number group pick the positions.
+  const positions = SOUNDBOARD_RULES[board.colors[beep]][soundGroup(board.numbers[beep])];
+  assert(positions.map((position) => position - 1).join(",") === board.target.join(","), "Soundboard target disagrees with the manual");
+  for (const position of [...positions].reverse()) applyModuleAction(state, "soundboard-press", position - 1);
+  assert(board.solved && state.mistakes === 0, "The marked positions in any order must solve the soundboard");
+}
+
+const solvers = { cable: solveCable, slider: solveSlider, direction: solveDirection, calculator: solveCalculator, piano: solvePiano, symbol: solveSymbol, soundboard: solveSoundboard };
 const everyNumber = [1, 2, 3, 4, 5, 6, 7, 8, 9];
 for (const group of Object.values(SLIDER_NUMBER_GROUPS)) {
   const combined = [...group.up, ...group.down];
@@ -124,7 +146,14 @@ for (const definition of LEVELS) {
     if (definition.level === 8) assert(enabled.length === 2 && enabled.includes("symbol") && enabled.filter((module) => EASY_MODULES.includes(module)).length === 1, "Level 8 must be the symbol dial plus one easy module");
     if (definition.level === 9) assert(enabled.length === 2 && enabled.includes("piano") && enabled.filter((module) => EASY_MODULES.includes(module)).length === 1, "Level 9 must be the piano plus one easy module");
     if (definition.level === 10) assert(enabled.join(",") === "symbol,piano", "Level 10 must be the symbol dial and the piano");
-    if (definition.level === 11) assert(enabled.length === 4 && enabled.every((module) => ALL_MODULES.includes(module)), "Infinite mode must contain four different modules");
+    const easyCount = enabled.filter((module) => EASY_MODULES.includes(module)).length;
+    const mediumCount = enabled.filter((module) => MEDIUM_MODULES.includes(module)).length;
+    if (definition.level === 11) assert(enabled.join(",") === "soundboard,symbol", "Level 11 must be the soundboard and the symbol dial");
+    if (definition.level === 12) assert(enabled.length === 3 && enabled.includes("soundboard") && easyCount === 1 && mediumCount === 2, "Level 12 must be the soundboard, one easy and one more medium");
+    if (definition.level === 13) assert(enabled.length === 3 && mediumCount === 2 && easyCount === 1, "Level 13 must be two medium and one easy");
+    if (definition.level === 14) assert(enabled.length === 3 && mediumCount === 3, "Level 14 must be three medium");
+    if (definition.level === 15) assert(enabled.length === 4 && mediumCount === 2 && easyCount === 2, "Level 15 must be two medium and two easy");
+    if (definition.level === INFINITE_LEVEL) assert(enabled.length === 4 && enabled.every((module) => ALL_MODULES.includes(module)), "Infinite mode must contain four different modules");
     for (const moduleKey of enabled) solvers[moduleKey](state);
     assert(completedModules(state) === enabled.length, `Level ${definition.level} did not complete`);
   }
@@ -133,7 +162,9 @@ assert(sliderPatternsSeen.size === SLIDER_TARGET_PATTERNS.length, "Slider genera
 assert(LEVELS.find(({ level }) => level === 8).durationMs === 210_000, "Level 8 timer must be 3:30");
 assert(LEVELS.find(({ level }) => level === 9).durationMs === 210_000, "Level 9 timer must be 3:30");
 assert(LEVELS.find(({ level }) => level === 10).durationMs === 240_000, "Level 10 timer must be 4:00");
-assert(LEVELS.find(({ level }) => level === 11).durationMs === 240_000, "Infinite timer must be 4:00");
+for (const level of [11, 12, 13, 14, 15, INFINITE_LEVEL]) assert(LEVELS.find((definition) => definition.level === level).durationMs === 240_000, `Level ${level} timer must be 4:00`);
+assert(LAST_CAMPAIGN_LEVEL === 15 && nextLevelAfterClear(14) === 15 && nextLevelAfterClear(15) === INFINITE_LEVEL && nextLevelAfterClear(INFINITE_LEVEL) === INFINITE_LEVEL, "The campaign runs to Level 15, then infinite mode repeats");
+assert(MEDIUM_MODULES.join(",") === "piano,symbol,soundboard" && ALL_MODULES.length === 7, "Three medium modules; seven in total");
 
 for (const [count, rules] of Object.entries(CABLE_RULES)) {
   for (const [light, target] of Object.entries(rules)) assert(target && light, `Missing ${count}-cable rule`);
@@ -178,8 +209,8 @@ const pianoDeafView = publicStateForRole(pianoVisibilityState, "observer", "deaf
 assert(!("melody" in pianoBlindView.modules.piano) && !("modeLight" in pianoBlindView.modules.piano), "Piano colors leaked to BLIND");
 assert("melody" in pianoDeafView.modules.piano && !("target" in pianoDeafView.modules.piano), "Piano solution leaked to DEAF or its clues are missing");
 
-// Symbol dial: the beep is DEAF-only, colors and seed stay hidden from BLIND.
-assert(EASY_MODULES.join(",") === "cable,slider,direction,calculator" && ALL_MODULES.length === 6, "Easy modules are the four originals; six modules in total");
+// Symbol dial: the beep is BLIND-only, colors and seed stay hidden from BLIND.
+assert(EASY_MODULES.join(",") === "cable,slider,direction,calculator", "Easy modules are the four originals");
 for (const seed of [1, 2, 3, 4]) {
   const colors = Object.values(SYMBOL_RULES[seed]);
   assert(colors.length === 4 && new Set(colors).size === 4, `Seed ${seed} must map the four symbols to four different colors`);
@@ -188,10 +219,10 @@ const symbolState = createGameState(8, "playing");
 const symbolBlind = publicStateForRole(symbolState, "operator", "blind-id").modules.symbol;
 const symbolDeaf = publicStateForRole(symbolState, "observer", "deaf-id").modules.symbol;
 const symbolMute = publicStateForRole(symbolState, "specialist", "mute-id").modules.symbol;
-assert(!("seed" in symbolBlind) && !("buttons" in symbolBlind) && !("beep" in symbolBlind) && symbolBlind.buttonCount === 3 && typeof symbolBlind.pointer === "number", "Symbol clues leaked to BLIND");
-assert(symbolDeaf.seed >= 1 && symbolDeaf.seed <= 4 && symbolDeaf.buttons.length === 3 && typeof symbolDeaf.beep === "boolean" && !("target" in symbolDeaf) && !("targetColor" in symbolDeaf), "DEAF must see the seed, buttons and beep but not the answer");
+assert(!("seed" in symbolBlind) && !("buttons" in symbolBlind) && typeof symbolBlind.beep === "boolean" && symbolBlind.buttonCount === 3 && typeof symbolBlind.pointer === "number", "BLIND must get the beep but no colors or seed");
+assert(symbolDeaf.seed >= 1 && symbolDeaf.seed <= 4 && symbolDeaf.buttons.length === 3 && !("beep" in symbolDeaf) && !("target" in symbolDeaf) && !("targetColor" in symbolDeaf), "DEAF must see the seed and buttons but not the beep or the answer");
 assert(Object.keys(symbolMute).join(",") === "solved", "MUTE must only know whether the dial is solved");
-assert(symbolDeaf.beep === (SYMBOLS[symbolState.modules.symbol.pointer] === symbolState.modules.symbol.target), "The beep must mean the pointer is on the hidden symbol");
+assert(symbolBlind.beep === (SYMBOLS[symbolState.modules.symbol.pointer] === symbolState.modules.symbol.target), "The beep must mean the pointer is on the hidden symbol");
 const symbol = symbolState.modules.symbol;
 if (SYMBOLS[symbol.pointer] === symbol.target) applyModuleAction(symbolState, "symbol-rotate");
 applyModuleAction(symbolState, "symbol-press", symbol.buttons.indexOf(symbol.targetColor));
@@ -202,7 +233,40 @@ assert(symbolState.mistakes === 2 && !symbol.solved, "Pressing the wrong color m
 applyModuleAction(symbolState, "symbol-press", symbol.buttons.indexOf(symbol.targetColor));
 assert(symbol.solved && symbolState.mistakes === 2, "The right color at the beep must solve the dial");
 applyModuleAction(symbolState, "symbol-rotate");
-assert(SYMBOLS[symbol.pointer] === symbol.target && !publicStateForRole(symbolState, "observer", "deaf-id").modules.symbol.beep, "A solved dial stops turning and stops beeping");
+assert(SYMBOLS[symbol.pointer] === symbol.target && !publicStateForRole(symbolState, "operator", "blind-id").modules.symbol.beep, "A solved dial stops turning and stops beeping");
+
+// Soundboard: BLIND gets numbers and the beep, DEAF gets colors, MUTE gets neither.
+for (const color of ["RED", "YELLOW", "GREEN", "BLUE"]) for (const group of ["LOW", "MID", "HIGH"]) {
+  const positions = SOUNDBOARD_RULES[color][group];
+  assert(positions.length === 3 && new Set(positions).size === 3 && positions.every((position) => position >= 1 && position <= 9), `Soundboard rule ${color} ${group} is malformed`);
+}
+assert(new Set(Object.values(SOUNDBOARD_RULES).flatMap((rows) => Object.values(rows).map((positions) => positions.join(",")))).size === 12, "Every soundboard rule must be different");
+const boardState = createGameState(11, "playing");
+const board = boardState.modules.soundboard;
+const boardBlind = () => publicStateForRole(boardState, "operator", "blind-id").modules.soundboard;
+const boardDeaf = publicStateForRole(boardState, "observer", "deaf-id").modules.soundboard;
+assert(!("colors" in boardBlind()) && boardBlind().braille.length === 9 && boardBlind().beep === null, "BLIND gets the Braille numbers and no beep before pressing");
+assert(boardDeaf.colors.length === 9 && !("braille" in boardDeaf) && !("beep" in boardDeaf) && !("target" in boardDeaf), "DEAF gets the colors only");
+assert(Object.keys(publicStateForRole(boardState, "specialist", "mute-id").modules.soundboard).join(",") === "solved", "MUTE only learns whether the soundboard is solved");
+const notBeeper = board.beeper === 0 ? 1 : 0;
+applyModuleAction(boardState, "soundboard-press", notBeeper);
+assert(boardState.mistakes === 0 && boardBlind().beep === null && boardState.actionLog.length === 1, "A search press is free and silent");
+applyModuleAction(boardState, "soundboard-press", board.beeper);
+assert(boardBlind().beep === board.beeper, "Pressing the beeping button shows the beep to BLIND");
+const wrong = [0, 1, 2, 3, 4, 5, 6, 7, 8].find((index) => !board.target.includes(index));
+applyModuleAction(boardState, "soundboard-press", board.target[0]);
+applyModuleAction(boardState, "soundboard-press", wrong);
+assert(boardState.mistakes === 1 && board.pressed.length === 0 && boardBlind().beep === board.beeper && boardState.actionLog.at(-1).tone === "error", "A wrong position strikes and clears the presses, but the beep stays");
+for (const index of board.target) applyModuleAction(boardState, "soundboard-press", index);
+assert(board.solved && boardBlind().beep === null, "Pressing every marked position solves the soundboard");
+
+// The case feed only shows strikes: correct moves add nothing.
+const quiet = createGameState(7, "playing");
+const before = quiet.actionLog.length;
+applyModuleAction(quiet, "toggle-slider", 0);
+applyModuleAction(quiet, "cut-cable", quiet.modules.cable.colors.indexOf(quiet.modules.cable.targetColor));
+applyModuleAction(quiet, "calculator-key", 1);
+assert(quiet.actionLog.length === before && quiet.modules.cable.solved, "Moves and accepted answers stay out of the case feed");
 
 // Level 0: the practice round. Fixed cable, no timer, no strikes.
 const practice = createGameState(0, "playing");
@@ -219,4 +283,4 @@ const practiceView = publicStateForRole(practice, "operator", "blind-id");
 assert("lastSignalAt" in practiceView && "lastActionAt" in practiceView, "Views carry the relay timestamps");
 assert(createGameState(1, "playing").serial.startsWith("SN-") && createGameState(1, "playing").durationMs === 150_000, "Level 1 is unchanged");
 
-console.log("Passed 22,000 randomized rounds across all six modules, the practice round, ten campaign levels, and infinite mode.");
+console.log(`Passed ${(LEVELS.length * 2_000).toLocaleString("en-US")} randomized rounds across all ${ALL_MODULES.length} modules, the practice round, ${LAST_CAMPAIGN_LEVEL} campaign levels, and infinite mode.`);

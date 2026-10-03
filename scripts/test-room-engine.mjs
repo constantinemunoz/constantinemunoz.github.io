@@ -206,7 +206,7 @@ function readyAll2(engine, ids) {
   assert(engine.data.state.level === 8 && engine.data.state.phase === "waiting" && /Level 8/.test(engine.data.state.actionLog.at(-1).text), "start opens the ready room for the chosen level");
   readyAll(engine);
   assert(engine.data.state.level === 8 && engine.data.state.phase === "playing" && engine.data.state.activeModuleKeys.includes("symbol"), "the chosen level arms with the symbol dial");
-  assert(newRoom({ startLevel: 99 }).data.startLevel === 11, "start levels are clamped to the infinite case");
+  assert(newRoom({ startLevel: 99 }).data.startLevel === 16, "start levels are clamped to the infinite case");
   assert(newRoom({ startLevel: "nope" }).data.startLevel === 1, "a bad start level falls back to Level 1");
 
   const practice = newRoom({ tutorialEnabled: true, startLevel: 5 });

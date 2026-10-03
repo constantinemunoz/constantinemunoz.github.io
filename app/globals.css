@@ -2659,3 +2659,94 @@ button.seat-card:focus-visible { outline: 3px solid var(--ring); outline-offset:
    when there is room without hiding the top when there is not. */
 .lobby-shell { display: flex; place-items: initial; overflow-x: hidden; overflow-y: auto; }
 .lobby-card { max-height: none; margin: auto; }
+
+/* Soundboard: two latches and a 3 by 3 board of buttons, after the sketch.
+   BLIND sees Braille dots and the BEEP! bubble; DEAF sees the button colors. */
+.soundboard-module { min-width: 0; display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 8px; padding: 14px 14px 12px 6px; background: #3e4a5c; }
+.soundboard-latches { display: grid; gap: 22px; }
+.soundboard-latches i { display: block; width: 15px; height: 20px; border: 3px solid #121412; border-left: 0; border-radius: 0 5px 5px 0; background: #cfd5dd; box-shadow: inset 0 0 0 2px rgb(255 255 255 / .35); }
+.soundboard-board { width: 100%; height: 100%; max-height: 270px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); grid-template-rows: repeat(3, minmax(34px, 1fr)); gap: 7px; padding: 14px 9px 9px; border: 3px solid #121412; border-radius: 16px; background: #e4e8ee; box-shadow: inset 0 0 0 3px #b9c1cc, 0 4px 0 #121412; }
+.soundboard-board button { position: relative; min-width: 0; min-height: 34px; display: grid; place-items: center; border: 3px solid #121412; border-radius: 10px; background: #f6f7f9; box-shadow: 0 4px 0 #121412; }
+.soundboard-board button[data-color="red"] { background: #ef4038; }
+.soundboard-board button[data-color="yellow"] { background: #f6d12f; }
+.soundboard-board button[data-color="green"] { background: #33cf5b; }
+.soundboard-board button[data-color="blue"] { background: #2874e6; }
+.soundboard-board button[data-pressed="true"] { transform: translateY(3px); box-shadow: 0 1px 0 #121412, inset 0 0 0 4px rgb(255 255 255 / .8); }
+.soundboard-board button:not(:disabled):active { transform: translateY(3px); box-shadow: 0 1px 0 #121412; }
+.soundboard-board .braille-cell { pointer-events: none; }
+.soundboard-beep { position: absolute; z-index: 4; left: 50%; top: -15px; display: grid; place-items: center; padding: 3px 8px; border: 3px solid #121412; border-radius: 10px 10px 10px 3px; background: #fff35c; color: #121412; box-shadow: 2px 2px 0 #121412; transform: translateX(-50%); animation: symbol-beep-pop .22s cubic-bezier(.2, 1.6, .5, 1) both; pointer-events: none; }
+.soundboard-beep b { font: 950 .82rem/1 var(--font-hand); white-space: nowrap; }
+.bomb-suitcase[data-vision="blind"] .soundboard-module { background: #000; }
+.bomb-suitcase[data-vision="blind"] .soundboard-latches i { border-color: #fff; background: #000; box-shadow: none; }
+.bomb-suitcase[data-vision="blind"] .soundboard-board { border-color: #fff; background: #000; box-shadow: none; }
+.bomb-suitcase[data-vision="blind"] .soundboard-board button { border-color: #fff; background: #000; box-shadow: none; }
+.bomb-suitcase[data-vision="blind"] .soundboard-board button[data-pressed="true"] { box-shadow: inset 0 0 0 4px #fff; }
+.bomb-suitcase[data-vision="blind"] .soundboard-board button[data-beep="true"] { border-width: 4px; }
+
+/* BLIND sees every beep now: a white bubble so it reads on the black case. */
+.bomb-suitcase[data-vision="blind"] .symbol-beep,
+.bomb-suitcase[data-vision="blind"] .soundboard-beep { border-color: #000; background: #fff; color: #000; box-shadow: 0 0 0 3px #fff; animation: symbol-beep-pop .22s cubic-bezier(.2, 1.6, .5, 1) both, blind-beep-flash .9s steps(1) .22s infinite; }
+.bomb-suitcase[data-vision="blind"] .symbol-beep::after { border-top-color: #fff; }
+.bomb-suitcase[data-vision="blind"] .symbol-module[data-beep="true"] .symbol-dial { box-shadow: 0 0 0 4px #fff; }
+@keyframes blind-beep-flash { 0%, 100% { background: #fff; } 50% { background: #d6d6d6; } }
+
+/* Soundboard manual: the color picks the page, the Braille number picks the grid. */
+.manual-pagination > div { grid-template-columns: repeat(7, minmax(0, 1fr)); }
+.manual-page[data-module="soundboard"] .manual-quick-steps { flex: 0 0 auto; }
+.manual-sound-button { display: inline-block; width: 22px; height: 22px; border: 2px solid var(--ink); border-radius: 5px; background: #e4e8ee; box-shadow: 0 2px 0 var(--ink); }
+.sound-grid { display: inline-grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 3px; }
+.sound-grid i { font-style: normal; }
+.sound-grid[data-size="mini"] i { width: 9px; height: 9px; border: 1.5px solid var(--ink); border-radius: 2px; background: #fff; }
+.sound-grid[data-size="mini"] i[data-marked="true"] { background: var(--ink); }
+.sound-grid[data-size="full"] { width: min(100%, 132px); gap: 4px; }
+.sound-grid[data-size="full"] i { aspect-ratio: 1; display: grid; place-items: center; border: 2px solid var(--ink); border-radius: 6px; background: #fff; color: #8a96a8; font: 900 .8rem/1 var(--font-hand); }
+.sound-grid[data-size="full"] i[data-marked="true"] { background: var(--ink); color: var(--yellow); }
+.soundboard-rule-focus { min-height: 0; flex: 1 1 auto; display: grid; grid-template-rows: auto minmax(0, 1fr); gap: 7px; }
+.soundboard-rule-color { min-height: 38px; display: flex; align-items: center; justify-content: center; gap: 10px; border: 2px solid var(--ink); border-radius: 11px; background: #e1eff7; }
+.soundboard-rule-color > svg { width: 22px; }
+.soundboard-rule-grid { min-height: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.soundboard-rule-grid > div { min-width: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; padding: 8px 6px; border: 2px solid var(--ink); border-radius: 11px; background: #f7f0dc; }
+.soundboard-rule-numbers { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; }
+.soundboard-rule-numbers > span { display: flex; align-items: center; gap: 3px; }
+.soundboard-rule-numbers b { font: 900 .85rem/1 var(--font-hand); }
+@media (max-width: 480px) {
+  .soundboard-rule-numbers .braille-cell { display: none; }
+  .soundboard-rule-grid { gap: 4px; }
+  .soundboard-rule-grid > div { padding: 5px 3px; gap: 5px; }
+  .sound-grid[data-size="full"] { gap: 2px; }
+  .sound-grid[data-size="full"] i { border-width: 1.5px; border-radius: 4px; font-size: .62rem; }
+}
+@media (max-width: 780px) {
+  .soundboard-module { gap: 5px; padding: 12px 8px 8px 4px; }
+  .soundboard-board { gap: 5px; padding: 12px 6px 6px; }
+}
+
+/* DEAF's Mute pane: the monkey and its sign bubble sit side by side on one
+   center line, as a centered pair, with the bubble's tail pointing at the
+   monkey's head. The status label sits under the pair. */
+.deaf-side .mute-signal-stage { display: grid; grid-template-columns: auto auto; grid-template-rows: minmax(0, 1fr) auto; justify-content: center; align-items: center; justify-items: center; column-gap: clamp(18px, 2.2vw, 26px); row-gap: 4px; padding: 10px 12px; }
+.deaf-side .mute-monkey { grid-column: 1; grid-row: 1; align-self: center; justify-self: end; margin: 0; padding: 0; }
+.deaf-side .mute-signal-space { grid-column: 2; grid-row: 1; align-self: center; justify-self: start; display: flex; align-items: center; min-width: 0; }
+.deaf-side .mute-signal-stage > small { grid-column: 1 / -1; grid-row: 2; align-self: end; justify-self: center; margin: 0; text-align: center; }
+.deaf-side .mute-monkey > span { display: block; line-height: 1; }
+/* The hands scale with the monkey so they cover its mouth, not its whole face. */
+.deaf-side .mute-monkey { font-size: clamp(2.9rem, min(4.4vw, 8vh), 4.4rem); }
+.deaf-side .mute-monkey > span { font-size: 1em; }
+.deaf-side .mute-hand { width: .46em; height: .46em; bottom: -.04em; }
+.soundboard-beep { top: -18px; padding: 4px 10px; }
+.soundboard-beep b { font-size: 1rem; }
+.bomb-suitcase[data-vision="blind"] .symbol-beep::before,
+.bomb-suitcase[data-vision="blind"] .symbol-beep::after { display: none; }
+.bomb-suitcase[data-vision="blind"] .symbol-beep { border-radius: 14px; }
+.sound-grid[data-size="full"] { width: min(100%, 112px); gap: 3px; }
+.soundboard-rule-grid > div { gap: 6px; padding-block: 6px; }
+.soundboard-rule-numbers .braille-cell { zoom: .8; }
+@media (min-width: 481px) {
+  .soundboard-rule-grid > div { flex-direction: row; gap: 10px; }
+  .soundboard-rule-numbers { flex-direction: column; flex-wrap: nowrap; gap: 3px; }
+  .sound-grid[data-size="full"] { width: min(100%, 104px); }
+}
+/* The dial never collapses: with three or four modules on a phone the suitcase
+   zooms out as a whole instead of squeezing the dial to a dot. */
+.symbol-dial-well { min-width: 96px; min-height: 96px; }
+@media (max-width: 780px) { .developer-level-switcher { max-width: none; } }

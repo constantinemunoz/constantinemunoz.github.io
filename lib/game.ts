@@ -24,7 +24,8 @@ export const ROLE_META: Record<Role, { name: string; monkey: string; short: stri
 
 export type LightColor = "RED" | "YELLOW" | "GREEN" | "BLUE";
 export type Direction = "UP" | "DOWN" | "LEFT" | "RIGHT";
-export type ModuleKey = "cable" | "slider" | "direction" | "calculator" | "piano" | "symbol";
+export type ModuleKey = "cable" | "slider" | "direction" | "calculator" | "piano" | "symbol" | "soundboard";
+export type SoundGroup = "LOW" | "MID" | "HIGH";
 export type SymbolKey = "PHI" | "STAR" | "HOURGLASS" | "TRIANGLE";
 export type RoundPhase = "waiting" | "playing";
 export type RoundResult = "new" | "cleared" | "timeout" | "strikes";
@@ -42,19 +43,27 @@ export type ChatMessage = {
 
 export type ActionLogEntry = { text: string; seq: number; tone?: "error" };
 
+// A level lists its fixed modules plus random picks, each drawn from a pool
+// without repeating a module already in the suitcase.
+export type RandomPick = { pool: ModuleKey[]; count: number };
 export type LevelDefinition = {
   level: number;
   title: string;
   modules: ModuleKey[];
   durationMs: number;
-  randomPool?: ModuleKey[];
-  randomCount?: number;
+  random?: RandomPick[];
 };
 
 // The four "easy" modules: one clue each and a single answer.
 export const EASY_MODULES: ModuleKey[] = ["cable", "slider", "direction", "calculator"];
+// The "medium" modules: a hidden step (a beep or a mode light) before the answer.
+export const MEDIUM_MODULES: ModuleKey[] = ["piano", "symbol", "soundboard"];
 export const CORE_MODULES = EASY_MODULES;
-export const ALL_MODULES: ModuleKey[] = [...EASY_MODULES, "piano", "symbol"];
+export const ALL_MODULES: ModuleKey[] = [...EASY_MODULES, ...MEDIUM_MODULES];
+export const LAST_CAMPAIGN_LEVEL = 15;
+export const INFINITE_LEVEL = 16;
+const easy = (count: number): RandomPick => ({ pool: EASY_MODULES, count });
+const medium = (count: number): RandomPick => ({ pool: MEDIUM_MODULES, count });
 
 // Level 0 is the optional practice round: one fixed cable, no timer, no strikes.
 export const PRACTICE_CABLE = { count: 3 as const, colors: ["BLUE", "RED", "GREEN"] as LightColor[], light: "RED" as LightColor, targetColor: "BLUE" as LightColor };
@@ -68,10 +77,15 @@ export const LEVELS: LevelDefinition[] = [
   { level: 5, title: "DO THE MATH", modules: ["slider", "calculator"], durationMs: 180_000 },
   { level: 6, title: "TRIPLE THREAT", modules: ["calculator", "cable", "slider"], durationMs: 210_000 },
   { level: 7, title: "FULL SUITCASE", modules: ["cable", "slider", "direction", "calculator"], durationMs: 240_000 },
-  { level: 8, title: "BEEP TEST", modules: ["symbol"], randomPool: EASY_MODULES, randomCount: 1, durationMs: 210_000 },
-  { level: 9, title: "KEY CHANGE", modules: ["piano"], randomPool: EASY_MODULES, randomCount: 1, durationMs: 210_000 },
+  { level: 8, title: "BEEP TEST", modules: ["symbol"], random: [easy(1)], durationMs: 210_000 },
+  { level: 9, title: "KEY CHANGE", modules: ["piano"], random: [easy(1)], durationMs: 210_000 },
   { level: 10, title: "GRAND FINALE", modules: ["symbol", "piano"], durationMs: 240_000 },
-  { level: 11, title: "INFINITE MODE", modules: [], randomPool: ALL_MODULES, randomCount: 4, durationMs: 240_000 },
+  { level: 11, title: "SOUND CHECK", modules: ["soundboard", "symbol"], durationMs: 240_000 },
+  { level: 12, title: "MIXED SIGNALS", modules: ["soundboard"], random: [easy(1), medium(1)], durationMs: 240_000 },
+  { level: 13, title: "DOUBLE TROUBLE", modules: [], random: [medium(2), easy(1)], durationMs: 240_000 },
+  { level: 14, title: "MEDIUM RARE", modules: [], random: [medium(3)], durationMs: 240_000 },
+  { level: 15, title: "LAST STAND", modules: [], random: [medium(2), easy(2)], durationMs: 240_000 },
+  { level: INFINITE_LEVEL, title: "INFINITE MODE", modules: [], random: [{ pool: ALL_MODULES, count: 4 }], durationMs: 240_000 },
 ];
 
 export const CABLE_RULES: Record<3 | 4, Record<LightColor, LightColor>> = {
@@ -136,6 +150,21 @@ export const SYMBOL_RULES: Record<1 | 2 | 3 | 4, Record<SymbolKey, LightColor>> 
   4: { PHI: "BLUE", STAR: "YELLOW", HOURGLASS: "GREEN", TRIANGLE: "RED" },
 };
 
+// Soundboard: nine buttons, each with a Braille number (BLIND) and a color
+// (DEAF). One of them beeps on BLIND's screen when pressed. Its color picks the
+// manual page and its number group picks the grid: press the marked positions
+// (1 is top left, 9 is bottom right), in any order.
+export const SOUND_GROUPS: Record<SoundGroup, number[]> = { LOW: [1, 2, 3], MID: [4, 5, 6], HIGH: [7, 8, 9] };
+export const SOUNDBOARD_RULES: Record<LightColor, Record<SoundGroup, number[]>> = {
+  RED: { LOW: [1, 5, 9], MID: [3, 5, 7], HIGH: [2, 5, 8] },
+  YELLOW: { LOW: [1, 2, 3], MID: [4, 5, 6], HIGH: [7, 8, 9] },
+  GREEN: { LOW: [1, 4, 7], MID: [3, 6, 9], HIGH: [1, 3, 8] },
+  BLUE: { LOW: [2, 4, 6], MID: [4, 6, 8], HIGH: [1, 7, 9] },
+};
+export function soundGroup(number: number): SoundGroup {
+  return number <= 3 ? "LOW" : number <= 6 ? "MID" : "HIGH";
+}
+
 export const MANUAL = {
   cable: CABLE_RULES,
   direction: DIRECTION_RULES,
@@ -143,6 +172,7 @@ export const MANUAL = {
   calculator: CALCULATOR_RULES,
   piano: PIANO_RULES,
   symbol: SYMBOL_RULES,
+  soundboard: SOUNDBOARD_RULES,
 };
 
 export type GameState = {
@@ -216,6 +246,15 @@ export type GameState = {
       buttons: LightColor[];
       targetColor: LightColor;
       pressed: number | null;
+      solved: boolean;
+    };
+    soundboard: {
+      numbers: number[];
+      colors: LightColor[];
+      beeper: number;
+      found: boolean;
+      target: number[];
+      pressed: number[];
       solved: boolean;
     };
   };
@@ -343,18 +382,39 @@ function createSymbolModule() {
   };
 }
 
+function shuffledNumbers() {
+  return shuffled(BRAILLE_NUMBERS);
+}
+
+export function createSoundboardModule() {
+  const numbers = shuffledNumbers();
+  const colors = Array.from({ length: 9 }, () => pick(COLORS));
+  const beeper = Math.floor(Math.random() * 9);
+  return {
+    numbers,
+    colors,
+    beeper,
+    found: false,
+    target: SOUNDBOARD_RULES[colors[beeper]][soundGroup(numbers[beeper])].map((position) => position - 1),
+    pressed: [] as number[],
+    solved: false,
+  };
+}
+
 export function levelDefinition(level: number) {
   return LEVELS.find((definition) => definition.level === level) ?? LEVELS.find((definition) => definition.level === 1)!;
 }
 
 export function nextLevelAfterClear(level: number) {
-  return level >= 10 ? 11 : level + 1;
+  return level >= LAST_CAMPAIGN_LEVEL ? INFINITE_LEVEL : level + 1;
 }
 
 export function resolveLevelModules(definition: LevelDefinition) {
-  const fixed = [...definition.modules];
-  const candidates = (definition.randomPool ?? []).filter((module) => !fixed.includes(module));
-  return [...fixed, ...shuffled(candidates).slice(0, definition.randomCount ?? 0)];
+  const chosen = [...definition.modules];
+  for (const { pool, count } of definition.random ?? []) {
+    chosen.push(...shuffled(pool.filter((module) => !chosen.includes(module))).slice(0, count));
+  }
+  return chosen;
 }
 
 export function nextFeedSeq(state: GameState) {
@@ -382,6 +442,7 @@ export function normalizeFeed(state: GameState) {
   state.lastSignalAt ??= null;
   state.lastActionAt ??= null;
   state.modules.symbol ??= createSymbolModule();
+  state.modules.soundboard ??= createSoundboardModule();
   if ((state.phase as string) === "tutorial") state.phase = "waiting";
   return state;
 }
@@ -415,6 +476,7 @@ export function createGameState(level = 1, phase: RoundPhase = "waiting", lastRe
       calculator: createCalculatorModule(),
       piano: createPianoModule(),
       symbol: createSymbolModule(),
+      soundboard: createSoundboardModule(),
     },
   };
 }
@@ -494,8 +556,11 @@ export function publicStateForRole(state: GameState, role: Role, playerId = "") 
           buttons: state.modules.symbol.buttons,
           pressed: state.modules.symbol.pressed,
           solved: state.modules.symbol.solved,
-          // The beep is the only clue to the hidden target, and only DEAF sees it.
-          beep: !state.modules.symbol.solved && SYMBOLS[state.modules.symbol.pointer] === state.modules.symbol.target,
+        },
+        soundboard: {
+          colors: state.modules.soundboard.colors,
+          pressed: state.modules.soundboard.pressed,
+          solved: state.modules.soundboard.solved,
         },
       },
     };
@@ -519,7 +584,9 @@ export function publicStateForRole(state: GameState, role: Role, playerId = "") 
       direction: { braille: state.modules.direction.braille, pressed: state.modules.direction.pressed, solved: state.modules.direction.solved },
       calculator: { enteredLength: state.modules.calculator.entered.length, stage: state.modules.calculator.stage, pressed: state.modules.calculator.pressed, solved: state.modules.calculator.solved },
       piano: { pressedCount: state.modules.piano.pressed.length, solved: state.modules.piano.solved },
-      symbol: { pointer: state.modules.symbol.pointer, buttonCount: state.modules.symbol.buttons.length, pressed: state.modules.symbol.pressed, solved: state.modules.symbol.solved },
+      // The beeps are the hidden clues, and only BLIND sees them.
+      symbol: { pointer: state.modules.symbol.pointer, buttonCount: state.modules.symbol.buttons.length, pressed: state.modules.symbol.pressed, solved: state.modules.symbol.solved, beep: !state.modules.symbol.solved && SYMBOLS[state.modules.symbol.pointer] === state.modules.symbol.target },
+      soundboard: { braille: state.modules.soundboard.numbers, beep: state.modules.soundboard.found && !state.modules.soundboard.solved ? state.modules.soundboard.beeper : null, pressed: state.modules.soundboard.pressed, solved: state.modules.soundboard.solved },
     },
   };
 }
@@ -533,7 +600,7 @@ function strike(state: GameState, note: string) {
   logAction(state, `${note} Strike ${state.mistakes}/${state.maxMistakes}.`, "error");
 }
 
-export type ModuleAction = "cut-cable" | "toggle-slider" | "check-slider" | "press-direction" | "calculator-key" | "calculator-clear" | "calculator-enter" | "piano-key" | "symbol-rotate" | "symbol-press";
+export type ModuleAction = "cut-cable" | "toggle-slider" | "check-slider" | "press-direction" | "calculator-key" | "calculator-clear" | "calculator-enter" | "piano-key" | "symbol-rotate" | "symbol-press" | "soundboard-press";
 
 export function applyModuleAction(state: GameState, action: ModuleAction, value?: number | string) {
   const enabled = new Set(activeModules(state));
@@ -545,7 +612,6 @@ export function applyModuleAction(state: GameState, action: ModuleAction, value?
       if (cable.colors[index] === cable.targetColor) {
         cable.cut = index;
         cable.solved = true;
-        logAction(state, "Cable severed. Circuit stable.");
       } else strike(state, "Wrong cable cut.");
     }
   }
@@ -554,7 +620,6 @@ export function applyModuleAction(state: GameState, action: ModuleAction, value?
     const index = Number(value);
     if (!state.modules.slider.solved && Number.isInteger(index) && index >= 0 && index < 4) {
       state.modules.slider.current[index] = !state.modules.slider.current[index];
-      logAction(state, `Slider position ${index + 1} moved.`);
     }
   }
 
@@ -562,7 +627,6 @@ export function applyModuleAction(state: GameState, action: ModuleAction, value?
     const correct = state.modules.slider.current.every((position, index) => position === state.modules.slider.target[index]);
     if (correct) {
       state.modules.slider.solved = true;
-      logAction(state, "Color slider pattern accepted.");
     } else strike(state, "Color slider pattern rejected.");
   }
 
@@ -573,7 +637,6 @@ export function applyModuleAction(state: GameState, action: ModuleAction, value?
       directionModule.pressed = direction;
       if (direction === directionModule.target) {
         directionModule.solved = true;
-        logAction(state, "Direction accepted.");
       } else {
         strike(state, "Wrong direction. Direction module reset.");
         state.modules.direction = createDirectionModule();
@@ -591,7 +654,6 @@ export function applyModuleAction(state: GameState, action: ModuleAction, value?
         } else if (digit === calculator.targetDigit) {
           calculator.pressed = digit;
           calculator.solved = true;
-          logAction(state, "Calculator confirmation accepted.");
         } else strike(state, "Wrong calculator confirmation key.");
       }
     }
@@ -599,7 +661,6 @@ export function applyModuleAction(state: GameState, action: ModuleAction, value?
     if (action === "calculator-enter" && calculator.stage === "entry") {
       if (Number(calculator.entered) === calculator.answer) {
         calculator.stage = "confirm";
-        logAction(state, "Equation accepted. Read the new light and confirm one final key.");
       } else {
         strike(state, "Incorrect equation result.");
         calculator.entered = "";
@@ -614,12 +675,7 @@ export function applyModuleAction(state: GameState, action: ModuleAction, value?
       const expected = piano.target[piano.pressed.length];
       if (key === expected) {
         piano.pressed.push(key);
-        if (piano.pressed.length === piano.target.length) {
-          piano.solved = true;
-          logAction(state, "Piano melody accepted.");
-        } else {
-          logAction(state, `Piano note ${piano.pressed.length}/${piano.target.length} accepted.`);
-        }
+        if (piano.pressed.length === piano.target.length) piano.solved = true;
       } else {
         strike(state, "Wrong piano key. Melody reset.");
         piano.pressed = [];
@@ -631,7 +687,6 @@ export function applyModuleAction(state: GameState, action: ModuleAction, value?
     const symbol = state.modules.symbol;
     if (!symbol.solved) {
       symbol.pointer = (symbol.pointer + 1) % SYMBOLS.length;
-      logAction(state, `Dial pointer on the ${SYMBOL_NAMES[SYMBOLS[symbol.pointer]]}.`);
     }
   }
 
@@ -643,10 +698,27 @@ export function applyModuleAction(state: GameState, action: ModuleAction, value?
       if (SYMBOLS[symbol.pointer] !== symbol.target) strike(state, "Symbol button pressed with no beep. Keep turning the dial.");
       else if (symbol.buttons[index] === symbol.targetColor) {
         symbol.solved = true;
-        logAction(state, "Symbol dial accepted.");
       } else strike(state, "Wrong symbol button.");
     }
   }
 
+  if (action === "soundboard-press" && enabled.has("soundboard")) {
+    const board = state.modules.soundboard;
+    const index = Number(value);
+    if (!board.solved && Number.isInteger(index) && index >= 0 && index < 9) {
+      // Searching: presses are free until the beeping button is found.
+      if (!board.found) {
+        if (index === board.beeper) board.found = true;
+      } else if (board.target.includes(index)) {
+        if (!board.pressed.includes(index)) board.pressed.push(index);
+        if (board.pressed.length === board.target.length) board.solved = true;
+      } else {
+        strike(state, "Wrong soundboard button. Pressed buttons reset.");
+        board.pressed = [];
+      }
+    }
+  }
+
+  // The feed only reports strikes; moves and accepted answers stay quiet.
   state.actionLog = state.actionLog.slice(-14);
 }

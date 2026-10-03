@@ -20,6 +20,7 @@ import {
   resetLog,
   ROLE_META,
   ROLES,
+  INFINITE_LEVEL,
   type GameState,
   type ModuleAction,
   type Role,
@@ -39,7 +40,7 @@ export type EngineData = {
   code: string;
   status: RoomStatus;
   hostId: string;
-  // Campaign level the host chose to begin at (1 to 11); Level 0 practice still comes first when enabled.
+  // Campaign level the host chose to begin at (1 to 16, 16 being infinite mode); Level 0 practice still comes first when enabled.
   startLevel: number;
   createdAt: number;
   version: number;
@@ -92,6 +93,7 @@ const MODULE_ACTIONS: ModuleAction[] = [
   "piano-key",
   "symbol-rotate",
   "symbol-press",
+  "soundboard-press",
 ];
 
 export function cleanCode(value: unknown) {
@@ -110,7 +112,7 @@ export function cleanName(value: unknown) {
 
 export function cleanStartLevel(value: unknown) {
   const level = Math.round(Number(value));
-  return Number.isFinite(level) ? Math.min(11, Math.max(1, level)) : 1;
+  return Number.isFinite(level) ? Math.min(INFINITE_LEVEL, Math.max(1, level)) : 1;
 }
 
 export function isRole(value: unknown): value is Role {
