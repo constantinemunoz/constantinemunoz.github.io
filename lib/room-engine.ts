@@ -137,7 +137,7 @@ export class RoomEngine {
     this.data = data;
   }
 
-  static create(options: { code: string; hostId: string; name: string; role: Role; chatEnabled: boolean; tutorialEnabled: boolean; startLevel?: number; now: number }) {
+  static create(options: { code: string; hostId: string; name: string; role?: Role; chatEnabled: boolean; tutorialEnabled: boolean; startLevel?: number; now: number }) {
     const startLevel = cleanStartLevel(options.startLevel ?? 1);
     const state = createGameState(startLevel, "waiting", "new", options.chatEnabled, [], options.tutorialEnabled);
     return new RoomEngine({
@@ -148,7 +148,7 @@ export class RoomEngine {
       createdAt: options.now,
       version: 1,
       state,
-      seats: [{ id: options.hostId, name: options.name, role: options.role, joinedAt: options.now, readyLevel: -1 }],
+      seats: [{ id: options.hostId, name: options.name, role: options.role ?? "operator", joinedAt: options.now, readyLevel: -1 }],
     });
   }
 
@@ -258,9 +258,13 @@ export class RoomEngine {
 
   private join(id: string, request: RoomRequest, now: number): HandleResult {
     const name = cleanName(request.name);
-    const role = request.role;
-    if (!name || !isRole(role)) return fail("Name and role are required.");
+    if (!name) return fail("A name is required.");
     if (this.seat(id)) return { ok: true };
+    // Players no longer pick a role on the home screen: they get the first open
+    // seat and can switch in the lobby or ready room.
+    const role = request.role == null ? this.openRole(name) : request.role;
+    if (role === null) return fail("This room is full. All three seats are taken.");
+    if (!isRole(role)) return fail("Choose a valid role.");
 
     const taken = this.seatForRole(role);
     if (taken && this.isOnline(taken.id)) return fail(`${ROLE_META[role].name} is already taken. Pick another role.`);
@@ -269,6 +273,17 @@ export class RoomEngine {
     if (taken) this.data.seats = this.data.seats.filter((seat) => seat !== taken);
     this.data.seats.push({ id, name, role, joinedAt: now, readyLevel: -1 });
     return { ok: true };
+  }
+
+  // First empty seat in BLIND, DEAF, MUTE order. When every seat is filled, a
+  // seat whose player went offline can be reclaimed, preferring one with the
+  // same name so a player who closed their tab gets their own seat back.
+  private openRole(name: string): Role | null {
+    const empty = ROLES.find((role) => !this.seatForRole(role));
+    if (empty) return empty;
+    const offline = ROLES.map((role) => this.seatForRole(role)).filter((seat): seat is Seat => Boolean(seat) && !this.isOnline(seat!.id));
+    const sameName = offline.find((seat) => seat.name.toLowerCase() === name.toLowerCase());
+    return (sameName ?? offline[0])?.role ?? null;
   }
 
   private leave(seat: Seat): HandleResult {
@@ -314,7 +329,8 @@ export class RoomEngine {
   private switchRole(seat: Seat, request: RoomRequest): HandleResult {
     const state = this.data.state;
     const targetRole = request.targetRole;
-    if (this.data.status !== "playing" || state.phase !== "waiting") return fail("Roles can only be switched in the ready room.");
+    const lobby = this.data.status === "lobby";
+    if (!lobby && (this.data.status !== "playing" || state.phase !== "waiting")) return fail("Roles can only be switched in the lobby or the ready room.");
     if (!isRole(targetRole)) return fail("Choose a valid role.");
     if (targetRole === seat.role) return { ok: true };
     const other = this.seatForRole(targetRole);

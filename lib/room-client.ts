@@ -55,7 +55,7 @@ const REQUEST_TIMEOUT_MS = 12_000;
 const HOST_BANNER_DELAY_MS = 2_500;
 const HOST_GRACE_MS = 7_000;
 const STALE_ROOM_MS = 24 * 60 * 60 * 1000;
-const HOST_UNREACHABLE = "The room host's browser isn't responding. If the host closed BOMBANANA, wait a few seconds for another player to take over, then try again.";
+const HOST_UNREACHABLE = "The room host's browser isn't responding. If the host closed the game, wait a few seconds for another player to take over, then try again.";
 
 // ---------------------------------------------------------------------------
 // Firebase setup
@@ -104,7 +104,7 @@ export function describeError(cause: unknown) {
   const code = typeof cause === "object" && cause && "code" in cause ? String((cause as { code: unknown }).code) : "";
   const message = cause instanceof Error ? cause.message : String(cause ?? "");
   if (/permission[_ ]denied/i.test(code) || /permission[_ ]denied/i.test(message)) {
-    return "Firebase refused the request. Check that the BOMBANANA database rules are published in the Firebase console.";
+    return "Firebase refused the request. Check that the Snip No Evil database rules are published in the Firebase console.";
   }
   if (code === "auth/operation-not-allowed" || code === "auth/admin-restricted-operation") {
     return "Anonymous sign-in is turned off. Turn it on in the Firebase console under Authentication, Sign-in method.";
@@ -525,7 +525,7 @@ async function cleanupStaleRooms() {
   await Promise.all(codes.map((code) => update(ref(db), { [roomPath(code)]: null, [`roomIndex/${code}`]: null }).catch(() => undefined)));
 }
 
-export async function createRoom(options: { name: string; role: Role; chatEnabled: boolean; tutorialEnabled: boolean; startLevel?: number }) {
+export async function createRoom(options: { name: string; role?: Role; chatEnabled: boolean; tutorialEnabled: boolean; startLevel?: number }) {
   try {
     const uid = await ensureUser();
     const { db } = firebase();
@@ -550,7 +550,7 @@ export async function createRoom(options: { name: string; role: Role; chatEnable
   }
 }
 
-export async function joinRoom(options: { code: string; name: string; role: Role }) {
+export async function joinRoom(options: { code: string; name: string; role?: Role }) {
   const code = cleanCode(options.code);
   let connection: RoomConnection | null = null;
   try {
@@ -559,7 +559,7 @@ export async function joinRoom(options: { code: string; name: string; role: Role
     const meta = await get(ref(db, roomPath(code, "meta")));
     if (!meta.exists()) throw new Error("Room not found. Check the five-character code.");
     connection = activate(RoomConnection.open(code, uid));
-    const snapshot = await connection.request({ action: "join", name: cleanName(options.name), role: options.role });
+    const snapshot = await connection.request({ action: "join", name: cleanName(options.name), ...(options.role ? { role: options.role } : {}) });
     if (!snapshot) throw new Error("The room did not send your seat. Try again.");
     return { connection, snapshot };
   } catch (cause) {

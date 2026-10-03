@@ -1,4 +1,6 @@
-# BOMBANANA code review
+# Snip No Evil code review
+
+The game was called BOMBANANA when this review was written.
 
 Review of the source that was imported into this repository on 2026-10-01. Everything in
 `lib/`, `app/`, `db/`, `drizzle/`, `scripts/` and the build configuration was read in full.

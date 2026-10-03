@@ -170,6 +170,34 @@ function cutCorrectCable(engine, id = HOST) {
   assert(resumed.data.state.lastResult === "cleared", "the level clears under the new host");
 }
 
+// --- Automatic seats and lobby swaps ------------------------------------------------
+{
+  const engine = RoomEngine.create({ code: "BAN42", hostId: HOST, name: "Ana", chatEnabled: false, tutorialEnabled: false, now });
+  engine.setOnline([HOST, DEAF, MUTE]);
+  assert(engine.seat(HOST).role === "operator", "the room creator gets the first seat when no role is given");
+  ok(engine.handle(MUTE, { action: "join", name: "Cat" }, now), "a player joins without picking a role");
+  assert(engine.seat(MUTE).role === "observer", "joiners get the first open seat");
+  ok(engine.handle(MUTE, { action: "switch-role", targetRole: "specialist" }, now), "a player can move to an open seat in the lobby");
+  assert(engine.seat(MUTE).role === "specialist" && !engine.seatForRole("observer"), "moving leaves the old seat open");
+  ok(engine.handle(DEAF, { action: "join", name: "Ben" }, now), "the third player joins");
+  assert(engine.seat(DEAF).role === "observer", "the third player fills the seat that was left open");
+  ok(engine.handle(HOST, { action: "switch-role", targetRole: "specialist" }, now), "players can swap seats in the lobby");
+  assert(engine.seat(HOST).role === "specialist" && engine.seat(MUTE).role === "operator", "a lobby swap trades the two seats");
+  rejected(engine.handle("uid-x", { action: "join", name: "Dan" }, now), /room is full/, "a fourth player is turned away");
+  engine.setOnline([HOST, MUTE]);
+  ok(engine.handle("uid-ben2", { action: "join", name: "ben" }, now), "a player who lost their tab rejoins on a new device");
+  assert(engine.seat("uid-ben2").role === "observer" && !engine.seat(DEAF), "the offline seat is reclaimed");
+  engine.setOnline([HOST, MUTE, "uid-ben2"]);
+  ok(engine.handle(HOST, { action: "start" }, now), "host starts after the swaps");
+  ok(engine.handle(HOST, { action: "switch-role", targetRole: "operator" }, now), "swaps still work in the ready room");
+  readyAll2(engine, [HOST, MUTE, "uid-ben2"]);
+  rejected(engine.handle(HOST, { action: "switch-role", targetRole: "observer" }, now), /lobby or the ready room/, "no swapping during a round");
+}
+
+function readyAll2(engine, ids) {
+  for (const id of ids) ok(engine.handle(id, { action: "ready" }, now), `${id} ready`);
+}
+
 // --- Start at a chosen level ------------------------------------------------------
 {
   const engine = newRoom({ startLevel: 8 });

@@ -217,6 +217,6 @@ assert(nextLevelAfterClear(0) === 1, "Clearing Level 0 leads to Level 1");
 assert(levelDefinition(42).level === 1, "Unknown levels fall back to Level 1, not the practice round");
 const practiceView = publicStateForRole(practice, "operator", "blind-id");
 assert("lastSignalAt" in practiceView && "lastActionAt" in practiceView, "Views carry the relay timestamps");
-assert(createGameState(1, "playing").serial.startsWith("BN-") && createGameState(1, "playing").durationMs === 150_000, "Level 1 is unchanged");
+assert(createGameState(1, "playing").serial.startsWith("SN-") && createGameState(1, "playing").durationMs === 150_000, "Level 1 is unchanged");
 
 console.log("Passed 22,000 randomized rounds across all six modules, the practice round, ten campaign levels, and infinite mode.");
