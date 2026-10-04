@@ -3,12 +3,19 @@
 Snip No Evil (formerly BOMBANANA) is an unofficial three-player browser bomb-defusal game. One player is the
 **Blind Operator** (touches every control, sees no colours), one is the **Deaf Observer**
 (sees the live bomb and the Blind cursor, gets no manual) and one is the **Mute Specialist**
-(reads the full manual, can only send numbers and hand signs). Clear ten campaign levels,
+(reads the full manual, can only send numbers and hand signs). Clear fifteen campaign levels,
 then keep going in infinite mode.
 
 Levels 1 to 7 use the four easy modules (cables, color sliders, direction, calculator).
-Level 8 adds the symbol dial, where only the Deaf player can see the module beep, Level 9
-adds the piano, and Level 10 pairs the dial with the piano. The room creator can turn on
+Levels 8 to 15 bring in the three medium modules: the symbol dial and the soundboard, where
+only the Blind player sees the module beep, and the piano. Level 11 pairs the soundboard
+with the dial, and Levels 12 to 15 mix medium and easy modules with four minutes each.
+After Level 15, infinite mode picks four of the seven modules for every case. The case feed
+only reports strikes, plus chat and the start and end of each round.
+
+The round timer is on the bomb's own screen next to the serial: red digits for the Deaf
+player, white for the Blind player. The Mute player has no timer. The Mute player's manual
+grows with the campaign: a module's page appears from the first level that uses it. The room creator can turn on
 an untimed Level 0 practice round, or type a level to start the campaign there.
 
 Nobody picks a role on the home screen. Type a name (and the room code to join) and
@@ -86,7 +93,7 @@ Each browser tab is a separate player, so you can test a room alone with three t
 pnpm install --frozen-lockfile   # install the exact locked dependencies
 pnpm run dev                     # dev server on http://localhost:3000
 pnpm run build                   # static site in ./out (what GitHub Pages serves)
-pnpm run test                    # game rules (22,000 random rounds) + room referee tests
+pnpm run test                    # game rules (34,000 random rounds) + room referee tests
 pnpm run lint                    # ESLint
 pnpm run typecheck               # tsc --noEmit
 ```
