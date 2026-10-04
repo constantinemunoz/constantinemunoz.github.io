@@ -14,6 +14,7 @@ import {
   createGameState,
   DIRECTION_RULES,
   LEVELS,
+  manualModules,
   levelDefinition,
   nextLevelAfterClear,
   PIANO_RULES,
@@ -259,6 +260,15 @@ applyModuleAction(boardState, "soundboard-press", wrong);
 assert(boardState.mistakes === 1 && board.pressed.length === 0 && boardBlind().beep === board.beeper && boardState.actionLog.at(-1).tone === "error", "A wrong position strikes and clears the presses, but the beep stays");
 for (const index of board.target) applyModuleAction(boardState, "soundboard-press", index);
 assert(board.solved && boardBlind().beep === null, "Pressing every marked position solves the soundboard");
+
+// MUTE's manual unlocks a page once a level up to the current one has used that module.
+const pagesAt = (level, active) => manualModules(level, active).join(",");
+assert(pagesAt(0) === "cable" && pagesAt(1) === "cable", "Levels 0 and 1 only have the cable page");
+assert(pagesAt(2) === "cable,slider" && pagesAt(4) === "cable,slider,direction" && pagesAt(7) === "cable,slider,direction,calculator", "Easy pages arrive with Levels 2, 4 and 5");
+assert(pagesAt(8, ["symbol", "direction"]) === "cable,slider,direction,calculator,symbol", "Level 8 adds the symbol dial page");
+assert(pagesAt(9) === "cable,slider,direction,calculator,symbol,piano" && pagesAt(10) === pagesAt(9), "Level 9 adds the piano page");
+assert(pagesAt(11) === "cable,slider,direction,calculator,symbol,piano,soundboard" && pagesAt(INFINITE_LEVEL) === pagesAt(11), "Level 11 adds the soundboard page; infinite mode has all seven");
+assert(pagesAt(1, ["slider"]) === "cable,slider", "A module on the current level always has its page");
 
 // The case feed only shows strikes: correct moves add nothing.
 const quiet = createGameState(7, "playing");

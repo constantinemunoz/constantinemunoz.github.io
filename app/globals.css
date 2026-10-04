@@ -2602,7 +2602,7 @@ button.seat-card:focus-visible { outline: 3px solid var(--ring); outline-offset:
 .game-brand .snip-mark { width: 42px; height: auto; color: var(--ink); }
 
 /* Digits that tick (timer, level, countdown) use the font's fixed-width figures. */
-.timer-block, .level-pill, .role-countdown, .role-countdown-card, .room-code-block button { font-variant-numeric: tabular-nums; }
+.case-timer, .level-pill, .role-countdown, .role-countdown-card, .room-code-block button { font-variant-numeric: tabular-nums; }
 
 /* MUTE's manual pages scroll when a page is taller than the book. */
 .manual-page, .manual-page.wide-manual-page { overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; }
@@ -2750,3 +2750,26 @@ button.seat-card:focus-visible { outline: 3px solid var(--ring); outline-offset:
    zooms out as a whole instead of squeezing the dial to a dot. */
 .symbol-dial-well { min-width: 96px; min-height: 96px; }
 @media (max-width: 780px) { .developer-level-switcher { max-width: none; } }
+
+/* The round clock lives on the bomb's own screen, beside the serial: a dark LED
+   panel with red digits for DEAF and plain white ones for BLIND. */
+.case-screen[data-clock="true"] { grid-template-columns: minmax(0, 1fr) auto; column-gap: clamp(8px, 2.2vw, 24px); padding-inline: clamp(12px, 3vw, 30px); }
+.case-screen[data-clock="true"] > i { display: none; }
+.case-timer { position: relative; z-index: 1; min-width: 4.4ch; display: grid; place-items: center; padding: .1em .32em .06em; border: 3px solid #101210; border-radius: 10px; background: #1a0b0a; color: #ff3b30; font: 950 clamp(1.5rem, 3.4vw, 2.9rem)/1 var(--font-hand); font-variant-numeric: tabular-nums; letter-spacing: .02em; white-space: nowrap; text-shadow: 0 0 8px rgb(255 59 48 / .65); box-shadow: inset 0 0 0 2px rgb(255 255 255 / .08), 2px 2px 0 rgb(0 0 0 / .25); }
+.case-timer[data-urgent="true"] { animation: case-timer-blink 1s steps(1) infinite; }
+@keyframes case-timer-blink { 50% { color: #7a1a15; text-shadow: none; } }
+.bomb-suitcase[data-vision="blind"] .case-timer { border-color: #fff; background: #000; color: #fff; text-shadow: none; box-shadow: none; animation: none; }
+@media (prefers-reduced-motion: reduce) { .case-timer[data-urgent="true"] { animation: none; } }
+
+/* The "Your move" tip gets its own row above the bomb on every screen, so it
+   never covers the bomb's screen (where the timer now lives). The side column
+   spans both rows and the suitcase zooms to fit what is left. */
+@media (min-width: 781px) {
+  .game-workspace:has(> .coach-strip) { grid-template-rows: auto minmax(0, 1fr); }
+  .game-workspace > .coach-strip { position: static; grid-column: 1; grid-row: 1; margin: 0; pointer-events: auto; }
+  .game-workspace:has(> .coach-strip) > :not(.coach-strip) { grid-column: 1; grid-row: 2; }
+  .game-workspace:has(> .coach-strip) > .case-feed,
+  .game-workspace:has(> .coach-strip) > .deaf-side { grid-column: 2; grid-row: 1 / 3; }
+}
+/* However far the suitcase zooms out on a phone, the timer digits stay about 18px or larger. */
+.case-timer { font-size: max(clamp(1.5rem, 3.4vw, 2.9rem), min(calc(18px / var(--case-zoom, 1)), 3.6rem)); }

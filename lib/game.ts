@@ -409,6 +409,19 @@ export function nextLevelAfterClear(level: number) {
   return level >= LAST_CAMPAIGN_LEVEL ? INFINITE_LEVEL : level + 1;
 }
 
+// MUTE's manual grows with the campaign: a module gets its page once a level up
+// to the current one has used it, plus anything this level's random picks
+// brought in. Pages run in the order the levels introduce them.
+export function manualModules(level: number, active: ModuleKey[] = []) {
+  const pages: ModuleKey[] = [];
+  for (const definition of [...LEVELS].sort((a, b) => a.level - b.level)) {
+    if (definition.level > level) break;
+    for (const key of definition.modules) if (!pages.includes(key)) pages.push(key);
+  }
+  for (const key of active) if (!pages.includes(key)) pages.push(key);
+  return pages;
+}
+
 export function resolveLevelModules(definition: LevelDefinition) {
   const chosen = [...definition.modules];
   for (const { pool, count } of definition.random ?? []) {

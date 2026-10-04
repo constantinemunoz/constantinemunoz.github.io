@@ -11,7 +11,11 @@ Levels 8 to 15 bring in the three medium modules: the symbol dial and the soundb
 only the Blind player sees the module beep, and the piano. Level 11 pairs the soundboard
 with the dial, and Levels 12 to 15 mix medium and easy modules with four minutes each.
 After Level 15, infinite mode picks four of the seven modules for every case. The case feed
-only reports strikes, plus chat and the start and end of each round. The room creator can turn on
+only reports strikes, plus chat and the start and end of each round.
+
+The round timer is on the bomb's own screen next to the serial: red digits for the Deaf
+player, white for the Blind player. The Mute player has no timer. The Mute player's manual
+grows with the campaign: a module's page appears from the first level that uses it. The room creator can turn on
 an untimed Level 0 practice round, or type a level to start the campaign there.
 
 Nobody picks a role on the home screen. Type a name (and the room code to join) and

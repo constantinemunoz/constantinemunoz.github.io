@@ -73,6 +73,7 @@ import {
   MEDIUM_MODULES,
   levelDefinition,
   makeId,
+  manualModules,
   nextLevelAfterClear,
   PIANO_RULES,
   PRACTICE_CABLE,
@@ -164,6 +165,8 @@ type RoomSnapshot = {
 // pointer and the position inside it, so DEAF's screen can draw the cursor on
 // the same control even though the two screens lay the suitcase out differently.
 type CursorPoint = { x: number; y: number; active: boolean; anchor?: string; ax?: number; ay?: number };
+// What the bomb's own screen shows next to the serial: the round clock.
+type BombClock = { label: string; urgent: boolean; title: string };
 type MuteSignal = { symbol: string; updatedAt: number; active: boolean };
 
 const ROLE_ICONS = { operator: Hand, observer: Eye, specialist: BookOpen };
@@ -232,7 +235,7 @@ function formatTime(ms: number) {
 const TUTORIAL_PAGES = ["THE BOMB", "THE SQUAD", "THE RELAY", "EASY MODULES", "MEDIUM MODULES", "THE ROUND"];
 
 function TutorialSpread({ page }: { page: number }) {
-  if (page === 0) return <div className="tutorial-spread"><section className="tutorial-page tutorial-art-page"><h3>BOMB</h3><div className="tutorial-case"><Bomb /><div><span>2:30</span><i>× × ×</i></div></div><p>Every suitcase combines one or more modules with the same shared clock.</p></section><section className="tutorial-page"><h3>READ THE DISPLAY</h3><div className="tutorial-callout"><Clock3 /><div><b>TIME</b><span>The timer appears on all three screens. Finish every active module before it reaches zero.</span></div></div><div className="tutorial-callout danger"><TriangleAlert /><div><b>STRIKES</b><span>A wrong answer adds a strike. Three strikes or no time left sends the same level back to the ready room.</span></div></div></section></div>;
+  if (page === 0) return <div className="tutorial-spread"><section className="tutorial-page tutorial-art-page"><h3>BOMB</h3><div className="tutorial-case"><Bomb /><div><span>2:30</span><i>× × ×</i></div></div><p>Every suitcase combines one or more modules with the same shared clock.</p></section><section className="tutorial-page"><h3>READ THE DISPLAY</h3><div className="tutorial-callout"><Clock3 /><div><b>TIME</b><span>The timer sits on the bomb&apos;s screen next to the serial, so BLIND and DEAF can see it. MUTE can&apos;t. Finish every module before it reaches zero.</span></div></div><div className="tutorial-callout danger"><TriangleAlert /><div><b>STRIKES</b><span>A wrong answer adds a strike. Three strikes or no time left sends the same level back to the ready room.</span></div></div></section></div>;
 
   if (page === 1) return <div className="tutorial-spread"><section className="tutorial-page"><h3>THREE MONKEYS</h3><div className="tutorial-role-stack">{ROLES.map((role) => <div key={role}><span>{ROLE_META[role].monkey}</span><p><b>{ROLE_META[role].short}</b><small>{ROLE_META[role].name}</small></p></div>)}</div><p>Each player receives different information. Nobody can solve the suitcase alone.</p></section><section className="tutorial-page"><h3>WHO KNOWS WHAT?</h3><div className="tutorial-role-facts"><div><span>🙈</span><p><b>BLIND</b><small>Touches every control and reads Braille patterns, but sees no colors or screen details.</small></p></div><div><span>🙉</span><p><b>DEAF</b><small>Sees colors, displays, the Blind player&apos;s cursor, and the Mute player&apos;s signs—but never gets the manual.</small></p></div><div><span>🙊</span><p><b>MUTE</b><small>Reads the full rulebook and sends numbers or expressions, but never sees the bomb.</small></p></div></div></section></div>;
 
@@ -604,7 +607,7 @@ function findAnchor(container: HTMLElement, anchor: string) {
   return Array.from(container.querySelectorAll<HTMLElement>("[data-anchor]")).find((element) => element.dataset.anchor === anchor) ?? null;
 }
 
-function SuitcaseBomb({ game, vision, act, busy = false, cursor, onCursorMove }: { game: PublicGameView; vision: "blind" | "color"; act?: (action: ModuleAction, value?: number | string) => void; busy?: boolean; cursor?: CursorPoint; onCursorMove?: (point: CursorPoint) => void }) {
+function SuitcaseBomb({ game, vision, act, busy = false, cursor, onCursorMove, clock }: { game: PublicGameView; vision: "blind" | "color"; act?: (action: ModuleAction, value?: number | string) => void; busy?: boolean; cursor?: CursorPoint; onCursorMove?: (point: CursorPoint) => void; clock?: BombClock }) {
   const suitcaseRef = useRef<HTMLDivElement>(null);
   const pointerRef = useRef<SVGSVGElement>(null);
   function trackPointer(event: ReactPointerEvent<HTMLDivElement>, active: boolean) {
@@ -643,18 +646,23 @@ function SuitcaseBomb({ game, vision, act, busy = false, cursor, onCursorMove }:
     const fit = () => {
       const size = `${frame.clientWidth}x${frame.clientHeight}`;
       if (size === lastSize) return;
-      suitcase.style.zoom = "";
+      // --case-zoom lets the bomb's timer counter the zoom and stay readable.
+      const setZoom = (value: number | null) => {
+        suitcase.style.zoom = value === null ? "" : String(value);
+        suitcase.style.setProperty("--case-zoom", String(value ?? 1));
+      };
+      setZoom(null);
       if (spills()) {
         // The smallest phones with four modules need well under 0.4 to show every key.
         let fits = 0.25;
         let tooBig = 1;
         for (let step = 0; step < 8; step += 1) {
           const middle = (fits + tooBig) / 2;
-          suitcase.style.zoom = String(middle);
+          setZoom(middle);
           if (spills()) tooBig = middle;
           else fits = middle;
         }
-        suitcase.style.zoom = String(fits);
+        setZoom(fits);
       }
       lastSize = `${frame.clientWidth}x${frame.clientHeight}`;
     };
@@ -698,7 +706,7 @@ function SuitcaseBomb({ game, vision, act, busy = false, cursor, onCursorMove }:
   return (
     <div ref={suitcaseRef} className="bomb-suitcase" data-vision={vision} onPointerMove={(event) => trackPointer(event, true)} onPointerLeave={(event) => trackPointer(event, false)}>
       {cursor?.active && <MousePointer2 ref={pointerRef} className="remote-cursor" />}
-      <div className="case-lid" data-anchor="case-lid"><div className="case-lid-inner"><div className="lid-cables"><i /><i /><i /></div><div className="case-screen"><span /><strong>{game.serial}</strong><i /></div><div className="lid-vents"><i /><i /><i /></div></div></div>
+      <div className="case-lid" data-anchor="case-lid"><div className="case-lid-inner"><div className="lid-cables"><i /><i /><i /></div><div className="case-screen" data-clock={Boolean(clock)}><span /><strong className="case-serial">{game.serial}</strong>{clock && <b className="case-timer" role="timer" data-urgent={clock.urgent} title={clock.title} aria-label={clock.title}>{clock.label}</b>}<i /></div><div className="lid-vents"><i /><i /><i /></div></div></div>
       <div className="case-hinge" data-anchor="case-hinge"><i /><i /></div>
       <div className="case-base" data-anchor="case-base"><div className="case-module-grid" data-count={game.activeModules.length}>{game.activeModules.map(renderModule)}</div></div>
     </div>
@@ -709,8 +717,8 @@ function MuteSignalStage({ signal }: { signal?: MuteSignal }) {
   return <div className="mute-signal-stage"><div className="mute-monkey"><Hand className="mute-hand mute-hand-left" /><span>🙊</span><Hand className="mute-hand mute-hand-right" /></div><div className="mute-signal-space" aria-live="polite">{signal?.active ? <div className="mute-signal-bubble" key={signal.updatedAt}>{signal.symbol}</div> : <div className="mute-signal-placeholder" aria-hidden="true">…</div>}</div><small>{signal?.active ? "SIGN RECEIVED" : "WAITING FOR SIGN"}</small></div>;
 }
 
-function ObserverPanel({ game, feed }: { game: PublicGameView; feed: ReactNode }) {
-  return <><section className="deaf-live-pane"><header><span><i /> LIVE</span><b>BLIND VIEW</b></header><SuitcaseBomb game={game} vision="color" cursor={game.operatorCursor} /></section><div className="deaf-side"><aside className="deaf-mute-pane"><header><span>🙊</span><b>MUTE LIVE</b></header><MuteSignalStage signal={game.muteSignal} /></aside>{feed}</div></>;
+function ObserverPanel({ game, feed, clock }: { game: PublicGameView; feed: ReactNode; clock: BombClock }) {
+  return <><section className="deaf-live-pane"><header><span><i /> LIVE</span><b>BLIND VIEW</b></header><SuitcaseBomb game={game} vision="color" cursor={game.operatorCursor} clock={clock} /></section><div className="deaf-side"><aside className="deaf-mute-pane"><header><span>🙊</span><b>MUTE LIVE</b></header><MuteSignalStage signal={game.muteSignal} /></aside>{feed}</div></>;
 }
 
 const CHAT_EXPRESSIONS = [
@@ -870,7 +878,7 @@ function SoundboardManual() {
 }
 
 function SpecialistPanel({ game, practice = false }: { game: PublicGameView; practice?: boolean }) {
-  const pages = [
+  const allPages = [
     { key: "cable" as const, icon: Scissors, component: <CableManual highlight={practice ? { count: PRACTICE_CABLE.count, light: PRACTICE_CABLE.light } : undefined} /> },
     { key: "slider" as const, icon: SlidersVertical, component: <SliderManual /> },
     { key: "direction" as const, icon: ArrowUp, component: <DirectionManual /> },
@@ -879,8 +887,13 @@ function SpecialistPanel({ game, practice = false }: { game: PublicGameView; pra
     { key: "symbol" as const, icon: Compass, component: <SymbolManual /> },
     { key: "soundboard" as const, icon: Grid3x3, component: <SoundboardManual /> },
   ];
+  const unlocked = manualModules(game.level, game.activeModules);
+  const pages = unlocked.map((key) => allPages.find((manualPage) => manualPage.key === key)).filter((manualPage): manualPage is (typeof allPages)[number] => Boolean(manualPage));
   const firstActivePage = Math.max(0, pages.findIndex((manualPage) => game.activeModules.includes(manualPage.key)));
-  const [page, setPage] = useState(firstActivePage);
+  const [chosen, setChosen] = useState({ level: game.level, page: firstActivePage });
+  // A new level opens the manual on its first module's page.
+  const page = chosen.level === game.level ? Math.min(chosen.page, pages.length - 1) : firstActivePage;
+  const setPage = (next: number | ((current: number) => number)) => setChosen({ level: game.level, page: typeof next === "function" ? next(page) : next });
   const PageIcon = pages[page].icon;
 
   return <div className="manual-book"><header><div className="manual-header-symbols"><BookOpen /><b>{game.level}</b><span>·</span><PageIcon /><b>{page + 1}/{pages.length}</b></div></header><div className="manual-pages">{pages[page].component}</div><footer className="manual-pagination"><button type="button" onClick={() => setPage((current) => Math.max(0, current - 1))} disabled={page === 0} aria-label="Previous manual page"><ChevronLeft /></button><div aria-label={`Manual page ${page + 1} of ${pages.length}`}>{pages.map((manualPage, index) => { const Icon = manualPage.icon; return <button type="button" key={manualPage.key} data-active={index === page} data-needed={game.activeModules.includes(manualPage.key)} onClick={() => setPage(index)} aria-label={`Open manual page ${index + 1}`}><Icon /><span>{index + 1}</span></button>; })}</div><button type="button" onClick={() => setPage((current) => Math.min(pages.length - 1, current + 1))} disabled={page === pages.length - 1} aria-label="Next manual page"><ChevronRight /></button></footer></div>;
@@ -1117,7 +1130,12 @@ function Game({ data, onData, developer, onLeave, banner }: { data: RoomSnapshot
   const remaining = game.startAt && clockReady ? game.startAt + game.durationMs - now : game.durationMs;
   // Capped at 3 so clock rounding never shows a "4" on the 3-second countdown.
   const prestart = game.startAt && clockReady ? Math.min(3, Math.max(0, Math.ceil((game.startAt - now) / 1000))) : 0;
-  const timePercent = Math.max(0, Math.min(100, (remaining / game.durationMs) * 100));
+  // The round clock lives on the bomb's screen (BLIND and DEAF), not in the header.
+  const bombClock: BombClock = prestart > 0
+    ? { label: `0:0${prestart}`, urgent: false, title: `Starting in ${prestart}` }
+    : game.level === 0
+      ? { label: "--:--", urgent: false, title: "No timer in the practice round" }
+      : { label: formatTime(Math.max(0, remaining)), urgent: remaining < 30_000, title: `${formatTime(Math.max(0, remaining))} left` };
 
   // "Your move" tips: one line per unsolved module this player hasn't learned yet.
   const learnedTips = useSyncExternalStore(subscribeLearnedTips, getLearnedTips, getServerLearnedTips);
@@ -1204,7 +1222,7 @@ function Game({ data, onData, developer, onLeave, banner }: { data: RoomSnapshot
   const caseFeed = <CaseFeed role={role} actionLog={game.actionLog} chatEnabled={game.chatEnabled} messages={game.messages} onSend={sendMessage} onSign={sendChat} busy={busy} />;
 
   return <main className="game-shell" data-role={role} data-developer={Boolean(developer)}>
-    <header className="game-header"><div className="game-header-start"><Link className="game-brand" href="/"><SnipMark /><b>SNIP <span>NO EVIL</span></b></Link>{onLeave && !developer && <button type="button" className="leave-room-button" onClick={onLeave} aria-label="Leave room"><LogOut /><span>LEAVE</span></button>}</div><div className="room-pill"><Users /> {developer ? "TEST MODE" : "ROOM"} <b>{data.room.code}</b></div><div className="level-pill">LEVEL <b>{levelName(game.level)}</b>{game.level === 0 && <i>PRACTICE</i>}</div><div className="timer-block" data-urgent={game.level > 0 && remaining < 30_000 && game.phase === "playing"}><Clock3 /><div><strong>{game.phase === "waiting" ? "READY" : prestart > 0 ? `0:0${prestart}` : game.level === 0 ? "NO TIMER" : formatTime(remaining)}</strong><Progress value={game.phase === "waiting" || game.level === 0 ? 100 : timePercent} /></div></div><div className="strike-block"><ShieldAlert />{game.level === 0 ? <em className="no-strikes">NO STRIKES</em> : Array.from({ length: game.maxMistakes }, (_, index) => <i key={index} data-hit={index < game.mistakes} />)}</div></header>
+    <header className="game-header"><div className="game-header-start"><Link className="game-brand" href="/"><SnipMark /><b>SNIP <span>NO EVIL</span></b></Link>{onLeave && !developer && <button type="button" className="leave-room-button" onClick={onLeave} aria-label="Leave room"><LogOut /><span>LEAVE</span></button>}</div><div className="room-pill"><Users /> {developer ? "TEST MODE" : "ROOM"} <b>{data.room.code}</b></div><div className="level-pill">LEVEL <b>{levelName(game.level)}</b>{game.level === 0 && <i>PRACTICE</i>}</div><div className="strike-block"><ShieldAlert />{game.level === 0 ? <em className="no-strikes">NO STRIKES</em> : Array.from({ length: game.maxMistakes }, (_, index) => <i key={index} data-hit={index < game.mistakes} />)}</div></header>
     <section className="role-banner"><div className="role-identity"><span>{meta.monkey}</span><div><small>YOUR ASSIGNMENT</small><h1>{meta.name}</h1></div></div><p><RoleIcon />{meta.ability}</p><RoleSenses role={role} compact /></section>
     {developer && <section className="developer-toolbar"><div className="developer-heading"><Wrench /><div><b>DEVELOPER MODE</b><span>Timer paused · shared test bomb</span></div></div><div className="developer-role-switcher">{ROLES.map((item) => <Button key={item} variant="outline" data-active={developer.role === item} onClick={() => developer.onRoleChange(item)}><span>{ROLE_META[item].monkey}</span>{ROLE_META[item].short}</Button>)}</div><div className="developer-level-switcher">{LEVELS.map(({ level }) => <button key={level} data-active={developer.level === level} onClick={() => developer.onLevelChange(level)}>{levelName(level)}</button>)}</div><details className="developer-solution"><summary>Reveal solution</summary><div>{developer.solution.map((line) => <span key={line}>{line}</span>)}</div></details><div className="developer-actions"><Button variant="outline" onClick={developer.onWaitingPreview}>Ready room</Button><Button variant="outline" onClick={developer.onReset}><RefreshCw /> Reset</Button><Button variant="outline" onClick={developer.onExit}><X /></Button></div></section>}
     <div className="progress-rail"><span>{game.completed}/{game.moduleCount} MODULES</span><Progress value={(game.completed / Math.max(1, game.moduleCount)) * 100} /><span>{game.levelTitle}</span></div>
@@ -1215,8 +1233,8 @@ function Game({ data, onData, developer, onLeave, banner }: { data: RoomSnapshot
     {nudge && <div className="stuck-nudge" role="status"><span className="stuck-badge"><TriangleAlert aria-hidden="true" /> STUCK?</span><p>{nudge}</p></div>}
     {game.phase === "waiting" ? <RoundWaitingRoom data={data} onReady={ready} onSwitchRole={switchRole} busy={busy} developer={Boolean(developer)} /> : <section className="game-workspace" data-role={role} data-coach={coaching && game.level === 0 ? relayStage : undefined}>
       {coachModules.length > 0 && <CoachStrip role={role} modules={coachModules} onDismiss={(module) => markTipsLearned([`${role}:${module}`], !developer)} />}
-      {role === "operator" && <SuitcaseBomb game={game} vision="blind" act={act} busy={busy || prestart > 0} onCursorMove={reportCursor} />}
-      {role === "observer" && <ObserverPanel game={game} feed={caseFeed} />}
+      {role === "operator" && <SuitcaseBomb game={game} vision="blind" act={act} busy={busy || prestart > 0} onCursorMove={reportCursor} clock={bombClock} />}
+      {role === "observer" && <ObserverPanel game={game} feed={caseFeed} clock={bombClock} />}
       {role === "specialist" && <SpecialistPanel key={`${game.level}-${game.activeModules.join("-")}`} game={game} practice={game.level === 0} />}
       {role !== "observer" && caseFeed}
     </section>}
