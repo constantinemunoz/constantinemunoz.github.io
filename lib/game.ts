@@ -722,6 +722,8 @@ export function applyModuleAction(state: GameState, action: ModuleAction, value?
       // Searching: presses are free until the beeping button is found.
       if (!board.found) {
         if (index === board.beeper) board.found = true;
+      } else if (index === board.beeper && !board.target.includes(index)) {
+        // Pressing the beeping button again just beeps again; it is not an answer.
       } else if (board.target.includes(index)) {
         if (!board.pressed.includes(index)) board.pressed.push(index);
         if (board.pressed.length === board.target.length) board.solved = true;

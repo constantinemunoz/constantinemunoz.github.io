@@ -13,6 +13,15 @@ with the dial, and Levels 12 to 15 mix medium and easy modules with four minutes
 After Level 15, infinite mode picks four of the seven modules for every case. The case feed
 only reports strikes, plus chat and the start and end of each round.
 
+The look is a "haunted temple workshop": a shoji screen over a dim wooden bench, paper
+lanterns, hazard tape and dust (`app/temple-scene.tsx`, `app/temple-theme.css`). As a round's
+clock runs down the lanterns flicker faster, the light turns redder, and in the last 15
+seconds the background shakes slightly. The bomb itself keeps its own colors.
+
+The beep modules relay through the Mute player, because the Deaf player can't hear: the
+Blind player says "beep!", the Mute player signs 👍, and the Deaf player names what is
+under the pointer or under the Blind player's cursor.
+
 The round timer is on the bomb's own screen next to the serial: red digits for the Deaf
 player, white for the Blind player. The Mute player has no timer. The Mute player's manual
 grows with the campaign: a module's page appears from the first level that uses it. The room creator can turn on
@@ -22,7 +31,9 @@ Nobody picks a role on the home screen. Type a name (and the room code to join) 
 press Play: the room hands out the first open seat, and players tap a seat in the lobby
 or ready room to move or swap.
 
-Live site: <https://constantinemunoz.github.io/>
+Live site: <https://constantinemunoz.github.io/> is a games shelf; Snip No Evil is at
+<https://constantinemunoz.github.io/snip-no-evil/>. To add another game, give it its own
+folder under `app/` (or a static folder under `public/`) and a card in `app/page.tsx`.
 
 ## How it is hosted
 
@@ -104,8 +115,10 @@ which needs Java) and run the app with `NEXT_PUBLIC_FIREBASE_EMULATOR=1`.
 
 ## Project layout
 
+- `app/page.tsx` — the games shelf at `/`; `app/snip-no-evil/page.tsx` — the game's page
 - `app/game-client.tsx` — start screen, lobby, ready room, the three role views, Level 0 coaching, developer mode
-- `app/globals.css` — the complete visual design
+- `app/globals.css` — the complete visual design; `app/temple-theme.css` and
+  `app/temple-scene.tsx` — the temple palette and the animated background behind every page
 - `app/fonts/goofus-hand.woff2` — GoofusHand, the only font in the game, built from
   `fonts-src/GoofusHand.ttf` by `scripts/build-font.py` (adds the symbols the game shows,
   fixed-width timer digits and consistent line metrics; run it again after changing the
@@ -116,6 +129,8 @@ which needs Java) and run the app with `NEXT_PUBLIC_FIREBASE_EMULATOR=1`.
 - `lib/firebase-config.ts` — the public Firebase web config
 - `database.rules.json` — who may read and write what in the database
 - `scripts/test-game-logic.mjs`, `scripts/test-room-engine.mjs` — tests
+- `scripts/check-bomb-controls.cjs` — browser check that every control on the Blind player's
+  bomb can be clicked at every screen size (see the comment at its top for how to run it)
 - `docs/CODE_REVIEW.md` — the code review done when the site was set up, with status
 
 Snip No Evil is an unofficial browser tribute and is not affiliated with Lefto Studio or TARK.
