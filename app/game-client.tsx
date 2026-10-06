@@ -50,6 +50,7 @@ import {
   Wrench,
   X,
 } from "lucide-react";
+import { SnipMark } from "./snip-mark";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -243,7 +244,7 @@ function TutorialSpread({ page }: { page: number }) {
 
   if (page === 3) return <div className="tutorial-spread"><section className="tutorial-page"><h3>EASY MODULES I</h3><div className="tutorial-module"><Scissors /><div><b>CABLE</b><span>Combine the light, cable colors, and cable count. MUTE identifies one color; BLIND cuts that cable.</span></div></div><div className="tutorial-module"><SlidersVertical /><div><b>COLOR SLIDER</b><span>Combine the four-light order with all four Braille values. Set every switch up or down, then press ENTER.</span></div></div></section><section className="tutorial-page"><h3>EASY MODULES II</h3><div className="tutorial-module"><ArrowUp /><div><b>DIRECTION</b><span>Combine one light with one Braille pattern. MUTE returns up, down, left, or right.</span></div></div><div className="tutorial-module"><Calculator /><div><b>CALCULATOR</b><span>Enter the equation result first. Then combine its odd/even result with the new light and press one final Braille key.</span></div></div></section></div>;
 
-  if (page === 4) return <div className="tutorial-spread"><section className="tutorial-page"><h3>MEDIUM MODULES</h3><div className="tutorial-module"><Compass /><div><b>SYMBOL DIAL</b><span>BLIND turns the pointer until BEEP! pops up on BLIND&apos;s screen. DEAF reads the seed light, the symbol and the button colors. MUTE names the button.</span></div></div><div className="tutorial-module"><Piano /><div><b>PIANO</b><span>DEAF reads the mode light and four melody lights. MUTE turns each color into a key. BLIND plays the four keys in order.</span></div></div><div className="tutorial-module"><Grid3x3 /><div><b>SOUNDBOARD</b><span>BLIND presses buttons until one beeps on BLIND&apos;s screen. Its Braille number and its color give MUTE the positions to press.</span></div></div></section><section className="tutorial-page"><h3>LEVELS 8 TO 15</h3><div className="tutorial-callout"><Grid3x3 /><div><b>MEDIUM LEVELS</b><span>Levels 8 to 10 add the dial and the piano. From 11 the soundboard joins, then medium and easy mixes. Four minutes each.</span></div></div><div className="tutorial-callout"><Shuffle /><div><b>INFINITE MODE</b><span>After Level 15 every suitcase picks four modules from all seven.</span></div></div><div className="tutorial-callout danger"><TriangleAlert /><div><b>WRONG PRESS</b><span>A wrong piano key or soundboard button is a strike and starts that module&apos;s presses over.</span></div></div></section></div>;
+  if (page === 4) return <div className="tutorial-spread"><section className="tutorial-page"><h3>MEDIUM MODULES</h3><div className="tutorial-module"><Compass /><div><b>SYMBOL DIAL</b><span>BLIND turns the pointer until BEEP! shows and says so. MUTE signs 👍, DEAF names the symbol, seed light and colors, and MUTE signs the button.</span></div></div><div className="tutorial-module"><Piano /><div><b>PIANO</b><span>DEAF reads the mode light and four melody lights. MUTE turns each color into a key. BLIND plays the four keys in order.</span></div></div><div className="tutorial-module"><Grid3x3 /><div><b>SOUNDBOARD</b><span>BLIND presses buttons until one shows BEEP! and reads its number. MUTE signs 👍, DEAF names the color under BLIND&apos;s cursor, and MUTE signs the positions.</span></div></div></section><section className="tutorial-page"><h3>LEVELS 8 TO 15</h3><div className="tutorial-callout"><Grid3x3 /><div><b>MEDIUM LEVELS</b><span>Levels 8 to 10 add the dial and the piano. From 11 the soundboard joins, then medium and easy mixes. Four minutes each.</span></div></div><div className="tutorial-callout"><Shuffle /><div><b>INFINITE MODE</b><span>After Level 15 every suitcase picks four modules from all seven.</span></div></div><div className="tutorial-callout danger"><TriangleAlert /><div><b>WRONG PRESS</b><span>A wrong piano key or soundboard button is a strike and starts that module&apos;s presses over.</span></div></div></section></div>;
 
   return <div className="tutorial-spread"><section className="tutorial-page tutorial-art-page"><h3>READY ROOM</h3><div className="tutorial-ready-demo"><div><span>🙈</span><b>READY</b></div><div><span>🙉</span><b>READY</b></div><div><span>🙊</span><b>READY</b></div></div><p>The timer begins only after all three players ready up.</p></section><section className="tutorial-page"><h3>ROUND LOOP</h3><ol className="tutorial-steps"><li><b>1</b><span>Review the next level and swap roles if the squad wants to.</span></li><li><b>2</b><span>All three players press READY. A short countdown arms the suitcase.</span></li><li><b>3</b><span>Solve every listed module before time or strikes run out.</span></li><li><b>4</b><span>A cleared level advances. A failed level must be replayed.</span></li></ol><div className="tutorial-win-strip"><TimerReset /><b>LEVELS 1 → 15 · ∞</b><Banana /></div></section></div>;
 }
@@ -251,26 +252,6 @@ function TutorialSpread({ page }: { page: number }) {
 function TutorialButton({ className = "", label = "How to play" }: { className?: string; label?: string }) {
   const [page, setPage] = useState(0);
   return <Dialog onOpenChange={(open) => { if (!open) setPage(0); }}><DialogTrigger asChild><Button type="button" variant="outline" className={className}><CircleHelp />{label}</Button></DialogTrigger><DialogContent className="tutorial-dialog" showCloseButton={false}><div className="tutorial-topline"><div><DialogTitle>SNIP NO EVIL FIELD GUIDE</DialogTitle><DialogDescription>{TUTORIAL_PAGES[page]} · PAGE {page + 1} OF {TUTORIAL_PAGES.length}</DialogDescription></div><DialogClose asChild><button type="button" aria-label="Close tutorial"><X /></button></DialogClose></div><TutorialSpread page={page} /><footer className="tutorial-footer"><button type="button" onClick={() => setPage((current) => Math.max(0, current - 1))} disabled={page === 0}><ChevronLeft /> BACK</button><div aria-label={`Tutorial page ${page + 1} of ${TUTORIAL_PAGES.length}`}>{TUTORIAL_PAGES.map((title, index) => <button type="button" key={title} onClick={() => setPage(index)} data-active={index === page} aria-label={`Open ${title.toLowerCase()} page`} />)}</div>{page < TUTORIAL_PAGES.length - 1 ? <button type="button" onClick={() => setPage((current) => Math.min(TUTORIAL_PAGES.length - 1, current + 1))}>NEXT <ChevronRight /></button> : <DialogClose asChild><button type="button">DONE <Check /></button></DialogClose>}</footer></DialogContent></Dialog>;
-}
-
-// Closed scissors pointing right: two ring handles and a long blade. The two
-// halves snip open and shut when the page loads and when the title is hovered.
-function SnipMark({ className = "" }: { className?: string }) {
-  return (
-    <svg className={`snip-mark ${className}`} viewBox="0 0 124 72" aria-hidden="true">
-      <g className="snip-half snip-half-top">
-        <path d="M34 22 L118 35 L46 40 Z" fill="#e8eef4" stroke="currentColor" strokeWidth="4" strokeLinejoin="round" />
-        <ellipse cx="20" cy="17" rx="15" ry="11" fill="none" stroke="currentColor" strokeWidth="10" />
-        <ellipse className="snip-grip" cx="20" cy="17" rx="15" ry="11" fill="none" strokeWidth="5" />
-      </g>
-      <g className="snip-half snip-half-bottom">
-        <path d="M34 50 L118 35 L46 32 Z" fill="#cfd9e3" stroke="currentColor" strokeWidth="4" strokeLinejoin="round" />
-        <ellipse cx="20" cy="55" rx="15" ry="11" fill="none" stroke="currentColor" strokeWidth="10" />
-        <ellipse className="snip-grip" cx="20" cy="55" rx="15" ry="11" fill="none" strokeWidth="5" />
-      </g>
-      <circle cx="46" cy="36" r="4" fill="currentColor" />
-    </svg>
-  );
 }
 
 // Hand-drawn red strike-through, two crossing lines like a scribbled-out word.
@@ -341,7 +322,7 @@ function StartScreen({ onEnter, onTest, notice }: { onEnter: (connection: RoomCo
           </form>
         </TabsContent>
       </Tabs>
-      <div className="entry-links home-links"><TutorialButton className="rules-link" label="Rules" /><button type="button" className="text-link" onClick={onTest}><Wrench /> Try it alone</button></div>
+      <div className="entry-links home-links"><TutorialButton className="rules-link" label="Rules" /><button type="button" className="text-link" onClick={onTest}><Wrench /> Try it alone</button><Link className="text-link" href="/"><ArrowLeft /> All games</Link></div>
       <footer className="home-footer"><span>Three players, three devices, one voice call.</span><span>Unofficial browser tribute. Not affiliated with Lefto Studio or TARK.</span></footer>
     </main>
   );
@@ -624,53 +605,84 @@ function SuitcaseBomb({ game, vision, act, busy = false, cursor, onCursorMove, c
     }
     onCursorMove(point);
   }
-  // Short windows squeeze the module boxes. If any control would spill out of
-  // its box, zoom the suitcase contents down just enough for everything to fit.
+  // Fit the suitcase to its frame without ever squeezing a control. A layout is
+  // good only when every module's contents fit inside it, no control sticks out
+  // of its module or overlaps another, and the suitcase fits the frame. If the
+  // full-size layout is not good, zoom out just enough. BLIND's bomb never goes
+  // below half size so every control stays clickable; if even that does not
+  // fit, the bomb scrolls instead (data-overflow="scroll").
   const fitKey = `${game.activeModules.join(",")}|${game.modules.cable?.colors?.length ?? game.modules.cable?.count ?? 0}`;
+  const minZoom = vision === "blind" ? 0.5 : 0.3;
   useLayoutEffect(() => {
     const suitcase = suitcaseRef.current;
     const frame = suitcase?.parentElement;
     if (!suitcase || !frame) return;
-    const spills = () => {
-      const clip = frame.getBoundingClientRect();
+    const problems = () => {
+      const bottom = Math.min(frame.getBoundingClientRect().bottom, suitcase.getBoundingClientRect().bottom);
+      const base = suitcase.querySelector(".case-base")?.getBoundingClientRect();
+      if (suitcase.dataset.overflow !== "scroll" && base && base.bottom > bottom + 1) return true;
       return Array.from(suitcase.querySelectorAll<HTMLElement>(".case-bay")).some((bay) => {
+        if (bay.scrollHeight > bay.clientHeight + 1 || bay.scrollWidth > bay.clientWidth + 1) return true;
         const box = bay.getBoundingClientRect();
-        if (box.bottom > clip.bottom + 1) return true;
-        return Array.from(bay.querySelectorAll<HTMLElement>("[data-anchor]")).some((control) => {
-          const rect = control.getBoundingClientRect();
-          return rect.bottom > box.bottom + 1 || rect.right > box.right + 1 || rect.top < box.top - 1;
+        const controls = Array.from(bay.querySelectorAll<HTMLElement>("button"));
+        const rects = controls.map((control) => control.getBoundingClientRect());
+        return rects.some((rect, index) => {
+          if (rect.bottom > box.bottom + 1 || rect.right > box.right + 1 || rect.top < box.top - 1 || rect.left < box.left - 1) return true;
+          // A click on the middle of the control must land on it, not on another part of the bomb.
+          const x = rect.left + rect.width / 2;
+          const y = rect.top + rect.height / 2;
+          if (x > 0 && y > 0 && x < window.innerWidth && y < window.innerHeight) {
+            const hit = document.elementFromPoint(x, y);
+            if (hit && suitcase.contains(hit) && !controls[index].contains(hit) && !hit.closest(".remote-cursor")) return true;
+          }
+          return rects.some((other, otherIndex) => {
+            if (otherIndex <= index || controls[index].contains(controls[otherIndex]) || controls[otherIndex].contains(controls[index])) return false;
+            return Math.min(rect.right, other.right) - Math.max(rect.left, other.left) > 2 && Math.min(rect.bottom, other.bottom) - Math.max(rect.top, other.top) > 2;
+          });
         });
       });
     };
-    let lastSize = "";
-    const fit = () => {
-      const size = `${frame.clientWidth}x${frame.clientHeight}`;
-      if (size === lastSize) return;
-      // --case-zoom lets the bomb's timer counter the zoom and stay readable.
-      const setZoom = (value: number | null) => {
-        suitcase.style.zoom = value === null ? "" : String(value);
-        suitcase.style.setProperty("--case-zoom", String(value ?? 1));
-      };
-      setZoom(null);
-      if (spills()) {
-        // The smallest phones with four modules need well under 0.4 to show every key.
-        let fits = 0.25;
-        let tooBig = 1;
-        for (let step = 0; step < 8; step += 1) {
-          const middle = (fits + tooBig) / 2;
-          setZoom(middle);
-          if (spills()) tooBig = middle;
-          else fits = middle;
-        }
-        setZoom(fits);
-      }
-      lastSize = `${frame.clientWidth}x${frame.clientHeight}`;
+    // --case-zoom lets the bomb's timer counter the zoom and stay readable.
+    const setZoom = (value: number | null) => {
+      suitcase.style.zoom = value === null ? "" : String(value);
+      suitcase.style.setProperty("--case-zoom", String(value ?? 1));
     };
-    fit();
-    const observer = new ResizeObserver(fit);
+    let lastSize = "";
+    const sizeKey = () => { const own = suitcase.getBoundingClientRect(); return `${frame.clientWidth}x${frame.clientHeight}|${Math.round(own.width)}x${Math.round(own.height)}`; };
+    const fit = (force = false) => {
+      if (!force && sizeKey() === lastSize) return;
+      delete suitcase.dataset.overflow;
+      setZoom(null);
+      if (problems()) {
+        setZoom(minZoom);
+        if (problems()) {
+          suitcase.dataset.overflow = "scroll";
+          setZoom(minZoom);
+        } else {
+          let fits = minZoom;
+          let tooBig = 1;
+          for (let step = 0; step < 8; step += 1) {
+            const middle = (fits + tooBig) / 2;
+            setZoom(middle);
+            if (problems()) tooBig = middle;
+            else fits = middle;
+          }
+          setZoom(fits);
+        }
+      }
+      lastSize = sizeKey();
+    };
+    fit(true);
+    const observer = new ResizeObserver(() => fit());
     observer.observe(frame);
-    return () => observer.disconnect();
-  }, [fitKey]);
+    observer.observe(suitcase);
+    // The hand font changes text widths once it loads, so measure again then.
+    let active = true;
+    const refit = () => { if (active) fit(true); };
+    document.fonts?.ready.then(refit).catch(() => undefined);
+    document.fonts?.addEventListener?.("loadingdone", refit);
+    return () => { active = false; observer.disconnect(); document.fonts?.removeEventListener?.("loadingdone", refit); };
+  }, [fitKey, minZoom]);
 
   // Place the remote cursor on this screen's copy of the control BLIND is over.
   useLayoutEffect(() => {
@@ -956,14 +968,14 @@ const COACH_LINES: Record<ModuleKey, Record<Role, string>> = {
     specialist: "Flip to the page for the mode light's color. Turn each melody color into a key number and sign all four in order.",
   },
   symbol: {
-    operator: "Click the middle of the dial to turn the pointer one symbol at a time. When BEEP! pops up on your screen, say so. Then press the button DEAF tells you.",
-    observer: "When BLIND says it beeped, tell MUTE which of the four seed lights is lit, which symbol the pointer is on, and the three button colors left to right. Then tell BLIND which button.",
-    specialist: "Flip to the page for the lit seed light DEAF names. Find the symbol that beeped to get a color. Sign where that color sits among the three buttons, left to right.",
+    operator: "Click the middle of the dial to turn the pointer one symbol at a time. When BEEP! pops up on your screen, say \"beep!\" out loud. Then press the button DEAF tells you.",
+    observer: "Tell MUTE which seed light is lit and the three button colors, left to right. When MUTE signs 👍, BLIND has the beep: tell MUTE the symbol under the pointer. Then tell BLIND which button MUTE signs.",
+    specialist: "Flip to the page for the seed light DEAF names. When BLIND says beep, sign 👍 so DEAF names the symbol under the pointer. Find its color and sign where that color sits among the three buttons, left to right.",
   },
   soundboard: {
-    operator: "Press the buttons one at a time until BEEP! pops up on one. Say which button beeped and read its Braille number out loud. Then press the buttons DEAF tells you.",
-    observer: "When BLIND finds the beeping button, tell MUTE its color. Then pass MUTE's numbers to BLIND: 1 is top left, 9 is bottom right.",
-    specialist: "Flip to the page for the beeping button's color. Find the grid for BLIND's number and sign each marked position: 1 is top left, 9 is bottom right.",
+    operator: "Press the buttons one at a time until BEEP! pops up on one. Leave your cursor on it, say \"beep!\" and hover it to read its Braille number out loud. Then press the buttons DEAF tells you, in any order.",
+    observer: "When MUTE signs 👍, BLIND has the beep: tell MUTE the color of the button under BLIND's cursor. Then pass MUTE's numbers to BLIND: 1 is top left, 9 is bottom right.",
+    specialist: "When BLIND says beep and reads a number, sign 👍 so DEAF names that button's color. Flip to that color's page, find the grid with BLIND's number, and sign each marked position: 1 is top left, 9 is bottom right.",
   },
 };
 
@@ -1079,11 +1091,11 @@ const NUDGES: Record<ModuleKey, Record<Exclude<RelayStage, "done">, Partial<Reco
     operate: { observer: "Tell BLIND the four key numbers in order.", operator: "Play the four keys DEAF says, in order." },
   },
   symbol: {
-    describe: { observer: "Wait for BLIND to say it beeped. Then tell MUTE the lit seed light, the symbol under the pointer, and the three button colors left to right.", specialist: "Flip to the page for the lit seed light. Find the beeping symbol's color and sign its button position, 1 to 3.", operator: "Click the middle of the dial to turn the pointer until BEEP! pops up on your screen. Then say so." },
+    describe: { operator: "Turn the dial one symbol at a time. When BEEP! pops up on your screen, say \"beep!\" out loud.", observer: "Tell MUTE the lit seed light and the three button colors. When MUTE signs 👍, name the symbol under the pointer.", specialist: "When BLIND says beep, sign 👍. Then use DEAF's seed light and symbol to sign the button's position, 1 to 3." },
     operate: { observer: "Tell BLIND which button to press: left, middle or right.", operator: "Press the button DEAF says." },
   },
   soundboard: {
-    describe: { operator: "Press buttons one at a time until one beeps. Say which one and read its Braille number out loud.", observer: "Ask BLIND which button beeped and tell MUTE its color.", specialist: "The color picks the page and BLIND's number picks the grid. Sign each marked position." },
+    describe: { operator: "Press buttons one at a time until one beeps. Leave your cursor on it, say \"beep!\" and read its Braille number out loud.", observer: "When MUTE signs 👍, tell MUTE the color of the button under BLIND's cursor.", specialist: "When BLIND says beep, sign 👍. The color picks the page and BLIND's number picks the grid. Sign each marked position." },
     operate: { observer: "Tell BLIND the positions to press: 1 is top left, 9 is bottom right.", operator: "Press the positions DEAF says, in any order." },
   },
 };
@@ -1130,6 +1142,18 @@ function Game({ data, onData, developer, onLeave, banner }: { data: RoomSnapshot
   const remaining = game.startAt && clockReady ? game.startAt + game.durationMs - now : game.durationMs;
   // Capped at 3 so clock rounding never shows a "4" on the 3-second countdown.
   const prestart = game.startAt && clockReady ? Math.min(3, Math.max(0, Math.ceil((game.startAt - now) / 1000))) : 0;
+  // The temple scene behind the page reacts to the clock: --tension climbs from
+  // 0 to 1 as time runs down, and "critical" (last 15 seconds) adds a slight
+  // shake to the background only, never to the bomb.
+  const tensionLive = game.phase === "playing" && game.level > 0 && prestart === 0 && game.durationMs > 0;
+  const tension = tensionLive ? Math.round(Math.min(1, Math.max(0, 1 - remaining / game.durationMs)) * 10) / 10 : 0;
+  const tensionMode = !tensionLive ? "calm" : remaining < 15_000 ? "critical" : tension >= 0.6 ? "tense" : "calm";
+  useEffect(() => {
+    const root = document.documentElement;
+    root.style.setProperty("--tension", String(tension));
+    root.dataset.tension = tensionMode;
+  }, [tension, tensionMode]);
+  useEffect(() => () => { document.documentElement.style.removeProperty("--tension"); delete document.documentElement.dataset.tension; }, []);
   // The round clock lives on the bomb's screen (BLIND and DEAF), not in the header.
   const bombClock: BombClock = prestart > 0
     ? { label: `0:0${prestart}`, urgent: false, title: `Starting in ${prestart}` }
@@ -1222,7 +1246,7 @@ function Game({ data, onData, developer, onLeave, banner }: { data: RoomSnapshot
   const caseFeed = <CaseFeed role={role} actionLog={game.actionLog} chatEnabled={game.chatEnabled} messages={game.messages} onSend={sendMessage} onSign={sendChat} busy={busy} />;
 
   return <main className="game-shell" data-role={role} data-developer={Boolean(developer)}>
-    <header className="game-header"><div className="game-header-start"><Link className="game-brand" href="/"><SnipMark /><b>SNIP <span>NO EVIL</span></b></Link>{onLeave && !developer && <button type="button" className="leave-room-button" onClick={onLeave} aria-label="Leave room"><LogOut /><span>LEAVE</span></button>}</div><div className="room-pill"><Users /> {developer ? "TEST MODE" : "ROOM"} <b>{data.room.code}</b></div><div className="level-pill">LEVEL <b>{levelName(game.level)}</b>{game.level === 0 && <i>PRACTICE</i>}</div><div className="strike-block"><ShieldAlert />{game.level === 0 ? <em className="no-strikes">NO STRIKES</em> : Array.from({ length: game.maxMistakes }, (_, index) => <i key={index} data-hit={index < game.mistakes} />)}</div></header>
+    <header className="game-header"><div className="game-header-start"><Link className="game-brand" href="/snip-no-evil/"><SnipMark /><b>SNIP <span>NO EVIL</span></b></Link>{onLeave && !developer && <button type="button" className="leave-room-button" onClick={onLeave} aria-label="Leave room"><LogOut /><span>LEAVE</span></button>}</div><div className="room-pill"><Users /> {developer ? "TEST MODE" : "ROOM"} <b>{data.room.code}</b></div><div className="level-pill">LEVEL <b>{levelName(game.level)}</b>{game.level === 0 && <i>PRACTICE</i>}</div><div className="strike-block"><ShieldAlert />{game.level === 0 ? <em className="no-strikes">NO STRIKES</em> : Array.from({ length: game.maxMistakes }, (_, index) => <i key={index} data-hit={index < game.mistakes} />)}</div></header>
     <section className="role-banner"><div className="role-identity"><span>{meta.monkey}</span><div><small>YOUR ASSIGNMENT</small><h1>{meta.name}</h1></div></div><p><RoleIcon />{meta.ability}</p><RoleSenses role={role} compact /></section>
     {developer && <section className="developer-toolbar"><div className="developer-heading"><Wrench /><div><b>DEVELOPER MODE</b><span>Timer paused · shared test bomb</span></div></div><div className="developer-role-switcher">{ROLES.map((item) => <Button key={item} variant="outline" data-active={developer.role === item} onClick={() => developer.onRoleChange(item)}><span>{ROLE_META[item].monkey}</span>{ROLE_META[item].short}</Button>)}</div><div className="developer-level-switcher">{LEVELS.map(({ level }) => <button key={level} data-active={developer.level === level} onClick={() => developer.onLevelChange(level)}>{levelName(level)}</button>)}</div><details className="developer-solution"><summary>Reveal solution</summary><div>{developer.solution.map((line) => <span key={line}>{line}</span>)}</div></details><div className="developer-actions"><Button variant="outline" onClick={developer.onWaitingPreview}>Ready room</Button><Button variant="outline" onClick={developer.onReset}><RefreshCw /> Reset</Button><Button variant="outline" onClick={developer.onExit}><X /></Button></div></section>}
     <div className="progress-rail"><span>{game.completed}/{game.moduleCount} MODULES</span><Progress value={(game.completed / Math.max(1, game.moduleCount)) * 100} /><span>{game.levelTitle}</span></div>

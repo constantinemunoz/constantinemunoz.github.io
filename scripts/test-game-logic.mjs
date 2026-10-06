@@ -254,6 +254,10 @@ applyModuleAction(boardState, "soundboard-press", notBeeper);
 assert(boardState.mistakes === 0 && boardBlind().beep === null && boardState.actionLog.length === 1, "A search press is free and silent");
 applyModuleAction(boardState, "soundboard-press", board.beeper);
 assert(boardBlind().beep === board.beeper, "Pressing the beeping button shows the beep to BLIND");
+if (!board.target.includes(board.beeper)) {
+  applyModuleAction(boardState, "soundboard-press", board.beeper);
+  assert(boardState.mistakes === 0 && board.pressed.length === 0, "Pressing the beeping button again is harmless when it is not an answer");
+}
 const wrong = [0, 1, 2, 3, 4, 5, 6, 7, 8].find((index) => !board.target.includes(index));
 applyModuleAction(boardState, "soundboard-press", board.target[0]);
 applyModuleAction(boardState, "soundboard-press", wrong);

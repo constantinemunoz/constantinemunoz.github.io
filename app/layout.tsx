@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import localFont from "next/font/local";
 import "./globals.css";
+import "./temple-theme.css";
+import { TempleScene } from "./temple-scene";
 
 // GoofusHand is the only font in the game. app/fonts/goofus-hand.woff2 is built
 // from fonts-src/GoofusHand.ttf by scripts/build-font.py. It is tiny and
@@ -16,9 +18,8 @@ const goofusHand = localFont({
 });
 
 export const metadata: Metadata = {
-  title: "Snip No Evil — Three-Player Bomb Defusal",
-  description:
-    "An unofficial three-player browser bomb-defusal game. One player can't see, one can't hear, one can't speak.",
+  title: "Games · constantinemunoz.github.io",
+  description: "Browser games to play with friends.",
   icons: {
     icon: "/favicon.svg",
     shortcut: "/favicon.svg",
@@ -32,7 +33,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className={`dark ${goofusHand.variable}`}>
-      <body className="antialiased">{children}</body>
+      <body className="antialiased"><TempleScene />{children}</body>
     </html>
   );
 }
